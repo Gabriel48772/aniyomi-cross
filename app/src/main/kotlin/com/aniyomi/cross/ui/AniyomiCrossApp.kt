@@ -2,21 +2,28 @@ package com.aniyomi.cross.ui
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -62,22 +69,34 @@ fun AniyomiCrossApp() {
     var readingPages by remember { mutableStateOf<List<MangaPage>>(emptyList()) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (playingVideo == null && readingChapter == null) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp
                 ) {
                     NavigationBarItem(
                         selected = currentTab == ScreenTab.ANIME,
                         onClick = { currentTab = ScreenTab.ANIME; selectedMedia = null },
                         icon = { Icon(Icons.Default.Movie, contentDescription = "Anime") },
-                        label = { Text("Anime") }
+                        label = { Text("Anime", fontWeight = if (currentTab == ScreenTab.ANIME) FontWeight.Bold else FontWeight.Normal) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                     NavigationBarItem(
                         selected = currentTab == ScreenTab.MANGA,
                         onClick = { currentTab = ScreenTab.MANGA; selectedMedia = null },
-                        icon = { Icon(Icons.Default.MenuBook, contentDescription = "Manga") },
-                        label = { Text("Manga") }
+                        icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Manga") },
+                        label = { Text("Manga", fontWeight = if (currentTab == ScreenTab.MANGA) FontWeight.Bold else FontWeight.Normal) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.secondary,
+                            indicatorColor = MaterialTheme.colorScheme.secondary
+                        )
                     )
                     NavigationBarItem(
                         selected = currentTab == ScreenTab.EXTENSIONS,
@@ -157,11 +176,13 @@ fun AniyomiCrossApp() {
                         ScreenTab.ANIME -> MediaCatalogView(
                             title = "Anime & Series",
                             source = animeSource,
+                            accentColor = MaterialTheme.colorScheme.primary,
                             onSelect = { selectedMedia = it }
                         )
                         ScreenTab.MANGA -> MediaCatalogView(
                             title = "Manga & Manhwa",
                             source = mangaSource,
+                            accentColor = MaterialTheme.colorScheme.secondary,
                             onSelect = { selectedMedia = it }
                         )
                         ScreenTab.EXTENSIONS -> ExtensionsCatalogView(
@@ -182,6 +203,7 @@ fun AniyomiCrossApp() {
 fun MediaCatalogView(
     title: String,
     source: CrossSource,
+    accentColor: Color,
     onSelect: (MediaItem) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -191,13 +213,12 @@ fun MediaCatalogView(
 
     var items by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var currentPage by remember { mutableStateOf(1) }
+    var isLoadingMore by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     val genres = listOf("Todos", "Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Supernatural")
     val isManga = title.contains("Manga", ignoreCase = true)
-
-    var currentPage by remember { mutableStateOf(1) }
-    var isLoadingMore by remember { mutableStateOf(false) }
 
     fun applyFilter(page: Int = 1) {
         coroutineScope.launch {
@@ -231,62 +252,91 @@ fun MediaCatalogView(
         applyFilter(1)
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(10.dp))
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        Spacer(modifier = Modifier.height(14.dp))
 
+        // Encabezado con título moderno
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = if (isManga) "Explora los mejores webtoons y mangas" else "Series en emisión y estrenos mundiales",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Barra de búsqueda con estilo redondeado
         OutlinedTextField(
             value = searchQuery,
             onValueChange = {
                 searchQuery = it
-                applyFilter()
+                applyFilter(1)
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Buscar anime, manga o manhwa...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar") },
-            shape = RoundedCornerShape(12.dp),
+            placeholder = { Text("Buscar por título...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = accentColor) },
+            shape = RoundedCornerShape(16.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                focusedBorderColor = accentColor,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            ),
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Filtro de País/Tipo (Solo para Manga/Manhwa)
         if (isManga) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
                     selected = selectedCountry == "TODOS",
-                    onClick = { selectedCountry = "TODOS"; applyFilter() },
-                    label = { Text("Todos") }
+                    onClick = { selectedCountry = "TODOS"; applyFilter(1) },
+                    label = { Text("Todos") },
+                    shape = RoundedCornerShape(12.dp)
                 )
                 FilterChip(
                     selected = selectedCountry == "KR",
-                    onClick = { selectedCountry = "KR"; applyFilter() },
-                    label = { Text("🇰🇷 Manhwa") }
+                    onClick = { selectedCountry = "KR"; applyFilter(1) },
+                    label = { Text("🇰🇷 Manhwa") },
+                    shape = RoundedCornerShape(12.dp)
                 )
                 FilterChip(
                     selected = selectedCountry == "JP",
-                    onClick = { selectedCountry = "JP"; applyFilter() },
-                    label = { Text("🇯🇵 Manga") }
+                    onClick = { selectedCountry = "JP"; applyFilter(1) },
+                    label = { Text("🇯🇵 Manga") },
+                    shape = RoundedCornerShape(12.dp)
                 )
                 FilterChip(
                     selected = selectedCountry == "CN",
-                    onClick = { selectedCountry = "CN"; applyFilter() },
-                    label = { Text("🇨🇳 Manhua") }
+                    onClick = { selectedCountry = "CN"; applyFilter(1) },
+                    label = { Text("🇨🇳 Manhua") },
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
             Spacer(modifier = Modifier.height(6.dp))
         }
 
         // Filtro de Géneros
-        androidx.compose.foundation.lazy.LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             items(genres) { genre ->
@@ -294,8 +344,13 @@ fun MediaCatalogView(
                     selected = selectedGenre == genre,
                     onClick = {
                         selectedGenre = genre
-                        applyFilter()
+                        applyFilter(1)
                     },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = accentColor,
+                        selectedLabelColor = Color.White
+                    ),
                     label = {
                         val labelEs = when (genre) {
                             "Action" -> "Acción"
@@ -316,37 +371,47 @@ fun MediaCatalogView(
 
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = accentColor)
             }
         } else if (items.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No se encontraron resultados con los filtros seleccionados.")
+                Text("No se encontraron resultados con los filtros actuales.", color = Color.Gray)
             }
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(items) { media ->
-                    MediaCard(media = media, onClick = { onSelect(media) })
+                // Banner Hero para el primer elemento
+                if (searchQuery.isEmpty() && selectedGenre == "Todos" && items.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }) {
+                        HeroBanner(media = items.first(), accentColor = accentColor, onClick = { onSelect(items.first()) })
+                    }
                 }
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+
+                items(items) { media ->
+                    MediaCard(media = media, accentColor = accentColor, onClick = { onSelect(media) })
+                }
+
+                item(span = { GridItemSpan(2) }) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 16.dp),
+                            .padding(vertical = 20.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         if (isLoadingMore) {
-                            CircularProgressIndicator()
+                            CircularProgressIndicator(color = accentColor)
                         } else {
                             Button(
                                 onClick = { applyFilter(currentPage + 1) },
-                                modifier = Modifier.fillMaxWidth(0.8f)
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                                modifier = Modifier.fillMaxWidth(0.85f).height(48.dp)
                             ) {
-                                Text("Cargar Más Series (+50)")
+                                Text("Cargar Más Series (+50)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             }
                         }
                     }
@@ -356,51 +421,139 @@ fun MediaCatalogView(
     }
 }
 
+// Banner Destacado Hero en la cabecera
 @Composable
-fun MediaCard(media: MediaItem, onClick: () -> Unit) {
+fun HeroBanner(media: MediaItem, accentColor: Color, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(260.dp)
+            .height(180.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        shape = RoundedCornerShape(18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = media.coverUrl,
+                contentDescription = media.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(190.dp)
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color.Black.copy(alpha = 0.92f), Color.Black.copy(alpha = 0.4f), Color.Transparent)
+                        )
+                    )
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(16.dp)
+                    .width(220.dp),
+                verticalArrangement = Arrangement.Center
             ) {
-                AsyncImage(
-                    model = media.coverUrl,
-                    contentDescription = media.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
                 Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp),
                     shape = RoundedCornerShape(6.dp),
-                    color = Color.Black.copy(alpha = 0.7f)
+                    color = accentColor
                 ) {
                     Text(
-                        text = if (media.type == ContentType.ANIME) "ANIME" else "MANGA",
+                        text = "DESTACADO HOY",
                         color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = media.title.replace(Regex("""\[.*?\]"""), "").trim(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = media.genres.take(2).joinToString(" • "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.LightGray
+                )
             }
-            Text(
-                text = media.title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(8.dp)
+        }
+    }
+}
+
+@Composable
+fun MediaCard(media: MediaItem, accentColor: Color, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(270.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = media.coverUrl,
+                contentDescription = media.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
+            // Degradado inferior para legibilidad
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.95f))
+                        )
+                    )
+            )
+            // Badge superior
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = if (media.type == ContentType.ANIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+            ) {
+                Text(
+                    text = if (media.type == ContentType.ANIME) "ANIME" else if (media.title.contains("Manhwa")) "MANHWA" else "MANGA",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                )
+            }
+            // Información en la base
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(10.dp)
+            ) {
+                Text(
+                    text = media.title.replace(Regex("""\[.*?\]"""), "").trim(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = media.genres.take(2).joinToString(" • "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFA0A5B9),
+                    maxLines = 1
+                )
+            }
         }
     }
 }
@@ -428,58 +581,62 @@ fun MediaDetailView(
         isLoading = false
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         TopAppBar(
-            title = { Text(details.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { Text(details.title.replace(Regex("""\[.*?\]"""), "").trim(), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Atrás")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
                 }
-            }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
         ) {
             item {
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
                     AsyncImage(
                         model = details.coverUrl,
                         contentDescription = details.title,
                         modifier = Modifier
-                            .width(120.dp)
-                            .height(170.dp)
-                            .clip(RoundedCornerShape(8.dp)),
+                            .width(130.dp)
+                            .height(190.dp)
+                            .clip(RoundedCornerShape(14.dp)),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = details.title,
+                            text = details.title.replace(Regex("""\[.*?\]"""), "").trim(),
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Fuente: ${details.sourceName}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Estado: ${details.status}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = "Estado: ${details.status}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             details.genres.take(3).forEach { genre ->
                                 Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
                                 ) {
                                     Text(
                                         text = genre,
                                         style = MaterialTheme.typography.labelSmall,
+                                        color = Color.LightGray,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
@@ -487,11 +644,11 @@ fun MediaDetailView(
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Sinopsis",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -499,11 +656,12 @@ fun MediaDetailView(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    text = if (details.type == ContentType.ANIME) "Episodios (${list.size})" else "Capítulos (${list.size})",
+                    text = if (details.type == ContentType.ANIME) "Episodios Disponibles (${list.size})" else "Capítulos del Cómic (${list.size})",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -511,7 +669,7 @@ fun MediaDetailView(
             if (isLoading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 }
             } else {
@@ -519,7 +677,8 @@ fun MediaDetailView(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .padding(vertical = 5.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Row(
@@ -529,12 +688,20 @@ fun MediaDetailView(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = item.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(
+                                    imageVector = if (details.type == ContentType.ANIME) Icons.Default.PlayArrow else Icons.AutoMirrored.Filled.MenuBook,
+                                    contentDescription = null,
+                                    tint = if (details.type == ContentType.ANIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                            }
                             Row {
                                 IconButton(
                                     onClick = {
@@ -545,7 +712,7 @@ fun MediaDetailView(
                                         }
                                     }
                                 ) {
-                                    Icon(Icons.Default.Download, contentDescription = "Descargar")
+                                    Icon(Icons.Default.Download, contentDescription = "Descargar", tint = Color.LightGray)
                                 }
                                 Button(
                                     onClick = {
@@ -554,9 +721,13 @@ fun MediaDetailView(
                                         } else {
                                             onReadChapter(item, source)
                                         }
-                                    }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (details.type == ContentType.ANIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                    )
                                 ) {
-                                    Text(if (details.type == ContentType.ANIME) "Ver" else "Leer")
+                                    Text(if (details.type == ContentType.ANIME) "Ver" else "Leer", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -601,9 +772,9 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(20.dp))
+                .background(Color.Black.copy(alpha = 0.6f), shape = CircleShape)
         ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Salir", tint = Color.White)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Salir", tint = Color.White)
         }
     }
 }
@@ -620,7 +791,7 @@ fun MangaReaderView(
             title = { Text(chapter.name, color = Color.White) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
@@ -646,7 +817,6 @@ fun ExtensionsCatalogView(repoManager: ExtensionRepositoryManager) {
     var filterLang by remember { mutableStateOf("all") }
     var query by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
-    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -662,13 +832,13 @@ fun ExtensionsCatalogView(repoManager: ExtensionRepositoryManager) {
         Text(
             text = "Repositorios & Extensiones",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = Color.White
         )
-        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Keiyoushi, Aniyomi, Yuzono y Salmanbappi (${extensions.size} disponibles)",
+            text = "Keiyoushi, Yuzono y SalmanBappi (${extensions.size} disponibles)",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.tertiary
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -677,13 +847,13 @@ fun ExtensionsCatalogView(repoManager: ExtensionRepositoryManager) {
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Buscar extensión (ej. AnimeFLV, TuMangaOnline)...") },
+            placeholder = { Text("Buscar extensión...") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar") },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(14.dp),
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
@@ -712,46 +882,37 @@ fun ExtensionsCatalogView(repoManager: ExtensionRepositoryManager) {
 
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(filtered) { ext ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp),
+                                .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (ext.iconUrl != null) {
-                                AsyncImage(
-                                    model = ext.iconUrl,
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (ext.type == ContentType.ANIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (ext.type == ContentType.ANIME) Icons.Default.Movie else Icons.AutoMirrored.Filled.MenuBook,
                                     contentDescription = ext.name,
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Crop
+                                    tint = Color.White
                                 )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (ext.type == ContentType.ANIME) Icons.Default.Movie else Icons.Default.MenuBook,
-                                        contentDescription = ext.name
-                                    )
-                                }
                             }
 
                             Spacer(modifier = Modifier.width(12.dp))
@@ -760,22 +921,21 @@ fun ExtensionsCatalogView(repoManager: ExtensionRepositoryManager) {
                                 Text(
                                     text = ext.name,
                                     style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
                                 )
                                 Text(
-                                    text = "v${ext.version} • [${ext.lang.uppercase()}] • ${ext.pkg}",
+                                    text = "v${ext.version} • [${ext.lang.uppercase()}]",
                                     style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
                             Button(
-                                onClick = {
-                                    ext.isInstalled = !ext.isInstalled
-                                }
+                                onClick = { ext.isInstalled = !ext.isInstalled },
+                                shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text(if (ext.isInstalled) "Instalado" else "Obtener")
+                                Text(if (ext.isInstalled) "Listo" else "Obtener")
                             }
                         }
                     }
@@ -793,10 +953,11 @@ fun DownloadsView(downloadManager: CrossDownloadManager) {
         Text(
             text = "Descargas Offline",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = Color.White
         )
         Text(
-            text = "Capítulos y episodios listos para disfrutar sin gastar datos ni conexión",
+            text = "Episodios y capítulos guardados para disfrutar sin gastar datos",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -806,23 +967,25 @@ fun DownloadsView(downloadManager: CrossDownloadManager) {
         if (tasks.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "No tienes descargas activas o guardadas.",
+                    text = "No tienes descargas guardadas todavía.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.outline
                 )
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(tasks) { task ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             Text(
                                 text = "${task.mediaTitle} - ${task.episodeOrChapterName}",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             LinearProgressIndicator(

@@ -8,7 +8,7 @@ import java.io.File
 
 object AppUpdateManager {
 
-    var githubRepoOwner = "usuario"
+    var githubRepoOwner = "Gabriel48772"
     var githubRepoName = "aniyomi-cross"
     const val CURRENT_VERSION = "1.0.0"
 
