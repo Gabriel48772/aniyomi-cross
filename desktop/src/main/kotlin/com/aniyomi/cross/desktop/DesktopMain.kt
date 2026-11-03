@@ -832,7 +832,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         return try {
             val req = Request.Builder()
                 .url(imageUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36 AniyomiCross/1.0")
+                .header("User-Agent", "AniyomiCross/1.0.0 (https://github.com/Gabriel48772/aniyomi-cross)")
                 .header("Referer", "https://mangadex.org/")
                 .build()
             com.aniyomi.cross.network.NetworkClient.okHttpClient.newCall(req).execute().use { res ->

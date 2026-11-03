@@ -51,8 +51,8 @@ object NetworkClient {
         .writeTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 AniyomiCross/1.0")
-                .header("Accept", "*/*")
+                .header("User-Agent", "AniyomiCross/1.0.0 (https://github.com/Gabriel48772/aniyomi-cross)")
+                .header("Accept", "application/json, image/*, */*")
                 .build()
             chain.proceed(request)
         }
