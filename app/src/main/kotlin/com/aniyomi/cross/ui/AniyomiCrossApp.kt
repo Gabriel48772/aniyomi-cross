@@ -40,7 +40,7 @@ import com.aniyomi.cross.downloader.CrossDownloadManager
 import com.aniyomi.cross.model.*
 import com.aniyomi.cross.repository.ExtensionRepositoryManager
 import com.aniyomi.cross.scrapers.AniListAnimeSource
-import com.aniyomi.cross.scrapers.AniListMangaSource
+import com.aniyomi.cross.scrapers.MangaDexDirectSource
 import com.aniyomi.cross.scrapers.CrossSource
 import kotlinx.coroutines.launch
 
@@ -60,7 +60,7 @@ fun AniyomiCrossApp() {
     val downloadManager = remember { CrossDownloadManager(context) }
 
     val animeSource = remember { AniListAnimeSource() }
-    val mangaSource = remember { AniListMangaSource() }
+    val mangaSource = remember { MangaDexDirectSource() }
 
     var currentTab by remember { mutableStateOf(ScreenTab.ANIME) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
@@ -779,6 +779,11 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
     }
 }
 
+enum class MangaReadingMode {
+    WEBTOON,
+    PAGED
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MangaReaderView(
@@ -786,25 +791,188 @@ fun MangaReaderView(
     pages: List<MangaPage>,
     onBack: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        TopAppBar(
-            title = { Text(chapter.name, color = Color.White) },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
-        )
+    var readingMode by remember { mutableStateOf(MangaReadingMode.WEBTOON) }
+    var showControls by remember { mutableStateOf(true) }
+    var currentPageIndex by remember { mutableIntStateOf(0) }
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(pages) { page ->
-                AsyncImage(
-                    model = page.imageUrl,
-                    contentDescription = "Página ${page.index}",
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth()
+    LaunchedEffect(lazyListState.firstVisibleItemIndex) {
+        if (readingMode == MangaReadingMode.WEBTOON && pages.isNotEmpty()) {
+            currentPageIndex = lazyListState.firstVisibleItemIndex.coerceIn(0, pages.size - 1)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0A0A0C))
+            .clickable { showControls = !showControls }
+    ) {
+        if (pages.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+        } else {
+            when (readingMode) {
+                MangaReadingMode.WEBTOON -> {
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(pages) { page ->
+                            AsyncImage(
+                                model = page.imageUrl,
+                                contentDescription = "Página ${page.index}",
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight()
+                            )
+                        }
+                    }
+                }
+                MangaReadingMode.PAGED -> {
+                    val page = pages.getOrNull(currentPageIndex)
+                    if (page != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AsyncImage(
+                                model = page.imageUrl,
+                                contentDescription = "Página ${page.index}",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Overlay Superior estilo Aniyomi
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn() + slideInVertically { -it },
+            exit = fadeOut() + slideOutVertically { -it },
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.85f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(chapter.name, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "MangaDex Oficial • Página ${currentPageIndex + 1} de ${pages.size}",
+                                color = MaterialTheme.colorScheme.tertiary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
+            }
+        }
+
+        // Overlay Inferior estilo Aniyomi con Slider y Selector de Modo
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    if (pages.size > 1) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("${currentPageIndex + 1}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Slider(
+                                value = (currentPageIndex + 1).toFloat(),
+                                onValueChange = { newVal ->
+                                    val targetIdx = (newVal.toInt() - 1).coerceIn(0, pages.size - 1)
+                                    currentPageIndex = targetIdx
+                                    if (readingMode == MangaReadingMode.WEBTOON) {
+                                        coroutineScope.launch {
+                                            lazyListState.scrollToItem(targetIdx)
+                                        }
+                                    }
+                                },
+                                valueRange = 1f..pages.size.toFloat(),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 12.dp),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                            Text("${pages.size}", color = Color.Gray, fontSize = 13.sp)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                readingMode = if (readingMode == MangaReadingMode.WEBTOON) {
+                                    MangaReadingMode.PAGED
+                                } else {
+                                    MangaReadingMode.WEBTOON
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2030)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                if (readingMode == MangaReadingMode.WEBTOON) "📜 Cascada Webtoon" else "📖 Modo Paginado",
+                                fontSize = 12.sp,
+                                color = Color.White
+                            )
+                        }
+
+                        if (readingMode == MangaReadingMode.PAGED) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconButton(
+                                    onClick = { if (currentPageIndex > 0) currentPageIndex-- },
+                                    enabled = currentPageIndex > 0
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Anterior", tint = if (currentPageIndex > 0) Color.White else Color.DarkGray)
+                                }
+                                IconButton(
+                                    onClick = { if (currentPageIndex < pages.size - 1) currentPageIndex++ },
+                                    enabled = currentPageIndex < pages.size - 1
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Siguiente", tint = if (currentPageIndex < pages.size - 1) Color.White else Color.DarkGray)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

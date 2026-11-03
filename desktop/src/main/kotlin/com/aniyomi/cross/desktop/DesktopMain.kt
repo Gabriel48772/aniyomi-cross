@@ -7,7 +7,8 @@ import com.aniyomi.cross.model.MediaItem
 import com.aniyomi.cross.model.VideoSource
 import com.aniyomi.cross.repository.ExtensionRepositoryManager
 import com.aniyomi.cross.scrapers.AniListAnimeSource
-import com.aniyomi.cross.scrapers.AniListMangaSource
+import com.aniyomi.cross.scrapers.MangaDexDirectSource
+import okhttp3.Request
 import kotlinx.coroutines.*
 import kotlinx.coroutines.swing.Swing
 import java.awt.*
@@ -62,7 +63,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
     private val scope = CoroutineScope(Dispatchers.Swing + SupervisorJob())
     private val repoManager = ExtensionRepositoryManager()
     private val animeSource = AniListAnimeSource()
-    private val mangaSource = AniListMangaSource()
+    private val mangaSource = MangaDexDirectSource()
 
     // Contenedores principales
     private val mainContentPanel = JPanel(CardLayout())
@@ -827,42 +828,86 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         }
     }
 
+    private fun fetchImageFromNetwork(imageUrl: String): Image? {
+        return try {
+            val req = Request.Builder()
+                .url(imageUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36 AniyomiCross/1.0")
+                .header("Referer", "https://mangadex.org/")
+                .build()
+            com.aniyomi.cross.network.NetworkClient.okHttpClient.newCall(req).execute().use { res ->
+                if (res.isSuccessful) {
+                    val bytes = res.body?.bytes()
+                    if (bytes != null) ImageIO.read(bytes.inputStream()) else null
+                } else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun openMangaReader(media: MediaItem, chapter: EpisodeOrChapter, pages: List<MangaPage>) {
-        val readerDialog = JDialog(this, "Lector Manga - ${media.title} (${chapter.name})", true)
-        readerDialog.setSize(950, 920)
+        val readerDialog = JDialog(this, "Lector Aniyomi - ${media.title} (${chapter.name})", true)
+        readerDialog.setSize(980, 950)
         readerDialog.setLocationRelativeTo(this)
         readerDialog.contentPane.background = Color.BLACK
         readerDialog.layout = BorderLayout()
 
         var currentPageIndex = 0
 
-        val topBar = JPanel(FlowLayout(FlowLayout.CENTER, 20, 10))
+        val topBar = JPanel(BorderLayout())
         topBar.background = Color(16, 17, 24)
-        topBar.border = BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_COLOR)
+        topBar.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_COLOR),
+            EmptyBorder(10, 20, 10, 20)
+        )
 
-        val titleLbl = JLabel("<html><font color='#ffffff'><b>${media.title}</b> • ${chapter.name}</font></html>")
+        val titleLbl = JLabel("<html><font color='#ffffff'><b>${media.title}</b></font> <font color='#8b5cf6'>• ${chapter.name}</font></html>")
+        titleLbl.font = Font("Segoe UI", Font.BOLD, 14)
+
         val pageStatus = JLabel("Página 1 de ${pages.size}")
         pageStatus.font = Font("Segoe UI", Font.BOLD, 13)
         pageStatus.foreground = Theme.ACCENT_CYAN
 
-        topBar.add(titleLbl)
-        topBar.add(pageStatus)
+        topBar.add(titleLbl, BorderLayout.WEST)
+        topBar.add(pageStatus, BorderLayout.EAST)
 
-        val imageLabel = JLabel("Cargando página del cómic...", SwingConstants.CENTER)
+        val imageLabel = JLabel("Cargando página de MangaDex...", SwingConstants.CENTER)
         imageLabel.background = Color.BLACK
         imageLabel.isOpaque = true
         val scrollPane = JScrollPane(imageLabel)
         scrollPane.border = null
-        scrollPane.verticalScrollBar.unitIncrement = 30
+        scrollPane.verticalScrollBar.unitIncrement = 35
         styleScrollBar(scrollPane)
 
-        val bottomBar = JPanel(FlowLayout(FlowLayout.CENTER, 16, 12))
+        // Barra inferior estilo Aniyomi con Slider interactivo y modos
+        val bottomBar = JPanel(BorderLayout(15, 8))
         bottomBar.background = Color(16, 17, 24)
-        bottomBar.border = BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_COLOR)
+        bottomBar.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_COLOR),
+            EmptyBorder(8, 20, 12, 20)
+        )
 
-        val prevBtn = createActionButton("◀ Página Anterior", Theme.BG_INPUT)
-        val nextBtn = createActionButton("Página Siguiente ▶", Theme.ACCENT_ROSE)
-        val webtoonBtn = createActionButton("📜 Modo Cascada (Webtoon)", Theme.ACCENT_PURPLE)
+        val pageSlider = JSlider(1, pages.size.coerceAtLeast(1), 1)
+        pageSlider.background = Color(16, 17, 24)
+        pageSlider.foreground = Theme.ACCENT_PURPLE
+        pageSlider.isOpaque = false
+
+        val controlsRow = JPanel(FlowLayout(FlowLayout.CENTER, 14, 0))
+        controlsRow.isOpaque = false
+
+        val prevBtn = createActionButton("◀ Anterior (A)", Theme.BG_INPUT)
+        val nextBtn = createActionButton("Siguiente ▶ (D)", Theme.ACCENT_ROSE)
+        val webtoonBtn = createActionButton("📜 Cascada Webtoon (W)", Theme.ACCENT_PURPLE)
+
+        controlsRow.add(prevBtn)
+        controlsRow.add(nextBtn)
+        controlsRow.add(webtoonBtn)
+
+        bottomBar.add(pageSlider, BorderLayout.NORTH)
+        bottomBar.add(controlsRow, BorderLayout.SOUTH)
+
+        var isUpdatingSlider = false
 
         fun showPage(idx: Int) {
             if (pages.isEmpty()) return
@@ -871,28 +916,38 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             prevBtn.isEnabled = currentPageIndex > 0
             nextBtn.isEnabled = currentPageIndex < pages.size - 1
 
+            if (!isUpdatingSlider) {
+                isUpdatingSlider = true
+                pageSlider.value = currentPageIndex + 1
+                isUpdatingSlider = false
+            }
+
             val page = pages[currentPageIndex]
             imageLabel.icon = null
-            imageLabel.text = "Descargando página ${currentPageIndex + 1}..."
+            imageLabel.text = "Descargando página ${currentPageIndex + 1} de ${pages.size}..."
 
             scope.launch(Dispatchers.IO) {
-                try {
-                    val img = ImageIO.read(URL(page.imageUrl))
-                    if (img != null) {
-                        val targetWidth = 840
-                        val scaledHeight = (img.height * (targetWidth.toDouble() / img.width)).toInt()
-                        val scaled = img.getScaledInstance(targetWidth, scaledHeight, Image.SCALE_SMOOTH)
-                        withContext(Dispatchers.Swing) {
-                            imageLabel.icon = ImageIcon(scaled)
-                            imageLabel.text = ""
-                            scrollPane.verticalScrollBar.value = 0
-                        }
-                    }
-                } catch (e: Exception) {
+                val img = fetchImageFromNetwork(page.imageUrl)
+                if (img != null) {
+                    val targetWidth = 860
+                    val scaledHeight = (img.getHeight(null) * (targetWidth.toDouble() / img.getWidth(null))).toInt()
+                    val scaled = img.getScaledInstance(targetWidth, scaledHeight, Image.SCALE_SMOOTH)
                     withContext(Dispatchers.Swing) {
-                        imageLabel.text = "Error al cargar página ${currentPageIndex + 1}"
+                        imageLabel.icon = ImageIcon(scaled)
+                        imageLabel.text = ""
+                        scrollPane.verticalScrollBar.value = 0
+                    }
+                } else {
+                    withContext(Dispatchers.Swing) {
+                        imageLabel.text = "Error al descargar página ${currentPageIndex + 1} de MangaDex"
                     }
                 }
+            }
+        }
+
+        pageSlider.addChangeListener {
+            if (!pageSlider.valueIsAdjusting && !isUpdatingSlider) {
+                showPage(pageSlider.value - 1)
             }
         }
 
@@ -900,9 +955,14 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         nextBtn.addActionListener { if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }
         webtoonBtn.addActionListener { openWebtoonScrollReader(media.title, chapter.name, pages) }
 
-        bottomBar.add(prevBtn)
-        bottomBar.add(nextBtn)
-        bottomBar.add(webtoonBtn)
+        // Atajos de teclado estilo Aniyomi Desktop
+        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex > 0) showPage(currentPageIndex - 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_LEFT, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex > 0) showPage(currentPageIndex - 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_A, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_D, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SPACE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ openWebtoonScrollReader(media.title, chapter.name, pages) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_W, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ readerDialog.dispose() }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
 
         readerDialog.contentPane.add(topBar, BorderLayout.NORTH)
         readerDialog.contentPane.add(scrollPane, BorderLayout.CENTER)
@@ -914,7 +974,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
     private fun openWebtoonScrollReader(title: String, chapterName: String, pages: List<MangaPage>) {
         val webtoonDialog = JDialog(this, "Modo Cascada Webtoon - $title", true)
-        webtoonDialog.setSize(950, 940)
+        webtoonDialog.setSize(980, 960)
         webtoonDialog.setLocationRelativeTo(this)
         webtoonDialog.contentPane.background = Color.BLACK
 
@@ -923,28 +983,26 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         pagesContainer.background = Color.BLACK
 
         for ((idx, page) in pages.withIndex()) {
-            val pageLbl = JLabel("Cargando página ${idx + 1}...", SwingConstants.CENTER)
+            val pageLbl = JLabel("Cargando página ${idx + 1} de MangaDex...", SwingConstants.CENTER)
             pageLbl.alignmentX = Component.CENTER_ALIGNMENT
-            pageLbl.foreground = Color.DARK_GRAY
+            pageLbl.foreground = Color.GRAY
             pageLbl.background = Color.BLACK
             pageLbl.isOpaque = true
             pagesContainer.add(pageLbl)
 
             scope.launch(Dispatchers.IO) {
-                try {
-                    val img = ImageIO.read(URL(page.imageUrl))
-                    if (img != null) {
-                        val targetWidth = 860
-                        val scaledHeight = (img.height * (targetWidth.toDouble() / img.width)).toInt()
-                        val scaled = img.getScaledInstance(targetWidth, scaledHeight, Image.SCALE_SMOOTH)
-                        withContext(Dispatchers.Swing) {
-                            pageLbl.icon = ImageIcon(scaled)
-                            pageLbl.text = ""
-                            pageLbl.revalidate()
-                            pageLbl.repaint()
-                        }
+                val img = fetchImageFromNetwork(page.imageUrl)
+                if (img != null) {
+                    val targetWidth = 880
+                    val scaledHeight = (img.getHeight(null) * (targetWidth.toDouble() / img.getWidth(null))).toInt()
+                    val scaled = img.getScaledInstance(targetWidth, scaledHeight, Image.SCALE_SMOOTH)
+                    withContext(Dispatchers.Swing) {
+                        pageLbl.icon = ImageIcon(scaled)
+                        pageLbl.text = ""
+                        pageLbl.revalidate()
+                        pageLbl.repaint()
                     }
-                } catch (e: Exception) {
+                } else {
                     withContext(Dispatchers.Swing) {
                         pageLbl.text = "Error cargando página ${idx + 1}"
                     }
@@ -954,8 +1012,10 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         val scroll = JScrollPane(pagesContainer)
         scroll.border = null
-        scroll.verticalScrollBar.unitIncrement = 35
+        scroll.verticalScrollBar.unitIncrement = 40
         styleScrollBar(scroll)
+
+        webtoonDialog.rootPane.registerKeyboardAction({ webtoonDialog.dispose() }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
         webtoonDialog.contentPane.add(scroll)
         webtoonDialog.isVisible = true
     }
