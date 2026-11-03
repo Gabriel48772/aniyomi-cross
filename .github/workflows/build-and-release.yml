@@ -1,0 +1,57 @@
+name: Build and Release Aniyomi Cross
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Desktop (PC) and Android (APK)
+        run: |
+          ./gradlew :desktop:fatJar :app:assembleDebug --no-daemon
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/AniyomiCross-Android.apk
+          cp desktop/build/libs/desktop-all.jar dist/AniyomiCross-PC.jar
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        with:
+          name: "Aniyomi Cross Actualización Automática"
+          tag_name: "v1.0.${{ github.run_number }}"
+          draft: false
+          prerelease: false
+          files: |
+            dist/AniyomiCross-Android.apk
+            dist/AniyomiCross-PC.jar
+            run-pc.bat
+            install-android.bat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
