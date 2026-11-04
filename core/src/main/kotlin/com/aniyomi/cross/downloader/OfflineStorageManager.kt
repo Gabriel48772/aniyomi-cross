@@ -31,56 +31,61 @@ class OfflineStorageManager(val baseDir: File) {
         headers: Map<String, String> = emptyMap(),
         onProgress: (Float) -> Unit
     ): File? = withContext(Dispatchers.IO) {
-        if (videoUrl.isBlank()) return@withContext null
-        val sanitizedMedia = sanitize(media.title)
-        val sanitizedEp = sanitize(episode.name)
-        val mediaDir = File(baseDir, "Anime/$sanitizedMedia")
-        if (!mediaDir.exists()) mediaDir.mkdirs()
-        val targetFile = File(mediaDir, "$sanitizedEp.mp4")
+        try {
+            if (videoUrl.isBlank()) return@withContext null
+            val sanitizedMedia = sanitize(media.title)
+            val sanitizedEp = sanitize(episode.name)
+            val mediaDir = File(baseDir, "Anime/$sanitizedMedia")
+            if (!mediaDir.exists()) mediaDir.mkdirs()
+            val targetFile = File(mediaDir, "$sanitizedEp.mp4")
 
-        var directUrl = videoUrl.trim()
-        if (directUrl.startsWith("//")) directUrl = "https:$directUrl"
-        val effectiveHeaders = headers.toMutableMap()
+            var directUrl = videoUrl.trim()
+            if (directUrl.startsWith("//")) directUrl = "https:$directUrl"
+            val effectiveHeaders = headers.toMutableMap()
 
-        // Si la URL no es un stream directo .mp4 o .m3u8, resolver el enlace multimedia subyacente
-        if (!directUrl.contains(".mp4", ignoreCase = true) && !directUrl.contains(".m3u8", ignoreCase = true)) {
-            val resolved = resolveDirectMediaUrl(directUrl, headers)
-            if (resolved != null) {
-                directUrl = resolved.first
-                effectiveHeaders.putAll(resolved.second)
-            }
-        }
-
-        val success = if (directUrl.contains(".m3u8", ignoreCase = true)) {
-            downloadHlsToMp4(directUrl, targetFile, effectiveHeaders, onProgress)
-        } else {
-            NetworkClient.downloadToFile(directUrl, targetFile, effectiveHeaders, onProgress)
-        }
-
-        if (success && targetFile.exists() && targetFile.length() > 50_000) {
-            // Verificar que no sea una página de error HTML guardada por accidente
-            val isHtml = try {
-                targetFile.inputStream().use { stream ->
-                    val buf = ByteArray(120)
-                    val read = stream.read(buf)
-                    if (read > 0) {
-                        val header = String(buf, 0, read).lowercase()
-                        header.contains("<html") || header.contains("<!doctype")
-                    } else false
+            // Si la URL no es un stream directo .mp4 o .m3u8, resolver el enlace multimedia subyacente
+            if (!directUrl.contains(".mp4", ignoreCase = true) && !directUrl.contains(".m3u8", ignoreCase = true)) {
+                val resolved = resolveDirectMediaUrl(directUrl, headers)
+                if (resolved != null) {
+                    directUrl = resolved.first
+                    effectiveHeaders.putAll(resolved.second)
                 }
-            } catch (e: Exception) {
-                false
             }
 
-            if (isHtml) {
-                targetFile.delete()
-                return@withContext null
+            val success = if (directUrl.contains(".m3u8", ignoreCase = true)) {
+                downloadHlsToMp4(directUrl, targetFile, effectiveHeaders, onProgress)
+            } else {
+                NetworkClient.downloadToFile(directUrl, targetFile, effectiveHeaders, onProgress)
             }
-            targetFile
-        } else {
-            if (targetFile.exists() && targetFile.length() <= 50_000) {
-                targetFile.delete()
+
+            if (success && targetFile.exists() && targetFile.length() > 50_000) {
+                // Verificar que no sea una página de error HTML guardada por accidente
+                val isHtml = try {
+                    targetFile.inputStream().use { stream ->
+                        val buf = ByteArray(120)
+                        val read = stream.read(buf)
+                        if (read > 0) {
+                            val header = String(buf, 0, read).lowercase()
+                            header.contains("<html") || header.contains("<!doctype")
+                        } else false
+                    }
+                } catch (e: Throwable) {
+                    false
+                }
+
+                if (isHtml) {
+                    targetFile.delete()
+                    return@withContext null
+                }
+                targetFile
+            } else {
+                if (targetFile.exists() && targetFile.length() <= 50_000) {
+                    targetFile.delete()
+                }
+                null
             }
+        } catch (t: Throwable) {
+            t.printStackTrace()
             null
         }
     }
@@ -138,7 +143,7 @@ class OfflineStorageManager(val baseDir: File) {
                     return@withContext Pair(streamUrl, embedHeaders)
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         null

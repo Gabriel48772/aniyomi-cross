@@ -1,8 +1,8 @@
 {
-  "version": "1.3.4",
-  "versionCode": 10,
+  "version": "1.3.5",
+  "versionCode": 11,
   "apkUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk",
   "jarUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar",
   "installerUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/Instalador-AniyomiCross-PC.bat",
-  "releaseNotes": "Versión 1.3.4: Corrección crítica de cierre inesperado (crash) al abrir animes en móvil, extractor de descargas MP4 para episodios y redirección universal al navegador externo con selector de aplicaciones."
+  "releaseNotes": "Versión 1.3.5: Solución definitiva al cierre repentino (crash) al abrir o descargar capítulos de animes en la APK móvil. Decodificador PureBase64 independiente y aislamiento total de excepciones en hilo principal."
 }

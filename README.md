@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.4%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
+  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.5%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
   <img src="https://img.shields.io/badge/Idioma-100%25%20Espa%C3%B1ol-FF2A6D?style=for-the-badge" alt="Español">
   <img src="https://img.shields.io/badge/Plataformas-Android%20%7C%20Windows-8B5CF6?style=for-the-badge" alt="Plataformas">
 </p>
@@ -21,7 +21,7 @@
 
 | Plataforma | Archivo de Descarga | Tipo | Instrucciones Rápidas |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.4) | Descarga en tu celular y pulsa "Instalar". |
+| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.5) | Descarga en tu celular y pulsa "Instalar". |
 | 💻 **PC (Instalador Windows)** | [🚀 **Descargar Instalador para PC**](dist/Instalador-AniyomiCross-PC.bat?raw=true) | `.bat` / `.ps1` | Descarga y haz doble clic para instalar con acceso directo e icono. |
 | 💻 **PC (Ejecutable Directo)** | [📦 **Descargar Ejecutable .jar**](dist/AniyomiCross-PC.jar?raw=true) | `.jar` portable | Ejecuta directamente con doble clic o con `run-pc.bat`. |
 
@@ -30,17 +30,14 @@
 
 ---
 
-## 🆕 Novedades de la Versión 1.3.4
+## 🆕 Novedades de la Versión 1.3.5
 
-1. **Corrección Crítica de Cierre Inesperado (Crash) en Móvil**:
-   - Se resolvió la falla donde la app se cerraba sola al presionar ver cualquier capítulo de anime.
-   - Protección integral de hilos en WebView y ExoPlayer: bloqueo de esquemas externos no controlados (`intent://`, `market://`), captura segura de JavaScript alerts/dialogs y aislamiento en el ciclo de vida de Jetpack Compose con aceleración de hardware activa.
-2. **Corrección del Botón "Abrir en Navegador"**:
-   - Ahora el botón "Navegador 🌐" normaliza automáticamente el enlace, añade la bandera de actividad nueva (`FLAG_ACTIVITY_NEW_TASK`) y abre el selector universal del sistema con opciones para Chrome, Brave, Firefox, VLC o el reproductor preferido.
-3. **Descargas 100% Reales en MP4**:
-   - Se implementó un extractor inteligente para resolver streams multimedia reales (`.mp4` o `.m3u8`) a partir de enlaces de servidores y páginas web (Mediafire directo, Voe, Streamwish, JKanime).
-   - Verificación estricta de formato: descarta páginas de error HTML y garantiza archivos de video válidos y reproducibles sin conexión.
-   - Diagnóstico visible del estado de descargas en tiempo real.
+1. **Solución Definitiva de Cierre Repentino (Crash) al Abrir o Descargar Capítulos**:
+   - Se erradicó la dependencia en APIs de Java 8+ incompatibles con el entorno móvil (reemplazo de Base64 por decodificador nativo Kotlin `PureBase64` sin dependencias externas).
+   - Aislamiento robusto de hilos: la obtención y búsqueda de servidores de anime ahora se ejecuta en `Dispatchers.IO` protegida contra excepciones no controladas o cancelaciones de snackbar.
+2. **Estabilidad Absoluta en Reproducción y Descargas**:
+   - Tanto la reproducción ("Ver") como la descarga de episodios en segundo plano cuentan con protección contra fallos de inicialización en `PlayerView` y `WebView`.
+   - Redirección con un solo toque hacia navegadores y reproductores externos (Chrome, VLC, etc.) mediante selector nativo.
 
 ---
 

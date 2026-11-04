@@ -55,6 +55,8 @@ import com.aniyomi.cross.scrapers.CrossSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 enum class ScreenTab {
     ANIME,
@@ -230,52 +232,92 @@ fun AniyomiCrossApp() {
                         onBack = { selectedMedia = null },
                         onPlayEpisode = { ep, source ->
                             coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Cargando servidores para ${ep.name}...")
-                                val videos = source.getVideoList(ep).filter { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
-                                if (videos.isNotEmpty()) {
-                                    if (videos.size == 1) {
-                                        playingVideo = videos.first()
-                                    } else {
-                                        selectedEpisodeForPlay = ep
-                                        availableVideoSources = videos
+                                try {
+                                    launch {
+                                        try {
+                                            snackbarHostState.showSnackbar("Buscando servidores para ${ep.name}...", duration = SnackbarDuration.Short)
+                                        } catch (t: Throwable) {}
                                     }
-                                } else {
-                                    snackbarHostState.showSnackbar("No se encontraron servidores disponibles para este episodio.")
+                                    val videos: List<VideoSource> = withContext(Dispatchers.IO) {
+                                        try {
+                                            source.getVideoList(ep).filter { v -> v.videoUrl.isNotBlank() && v.format != "NOTICE" }
+                                        } catch (t: Throwable) {
+                                            emptyList()
+                                        }
+                                    }
+                                    if (videos.isNotEmpty()) {
+                                        if (videos.size == 1) {
+                                            playingVideo = videos.first()
+                                        } else {
+                                            selectedEpisodeForPlay = ep
+                                            availableVideoSources = videos
+                                        }
+                                    } else {
+                                        snackbarHostState.showSnackbar("No se encontraron servidores disponibles para este episodio.")
+                                    }
+                                } catch (t: Throwable) {
+                                    snackbarHostState.showSnackbar("Error al abrir episodio: ${t.localizedMessage ?: "Fallo de conexión"}")
                                 }
                             }
                         },
                         onReadChapter = { ch, source ->
                             coroutineScope.launch {
-                                val pages = source.getPageList(ch)
-                                readingPages = pages
-                                readingChapter = ch
+                                try {
+                                    val pages: List<MangaPage> = withContext(Dispatchers.IO) {
+                                        source.getPageList(ch)
+                                    }
+                                    readingPages = pages
+                                    readingChapter = ch
+                                } catch (t: Throwable) {
+                                    snackbarHostState.showSnackbar("Error al cargar páginas: ${t.localizedMessage ?: "Error de red"}")
+                                }
                             }
                         },
                         onDownloadEpisode = { ep, source ->
                             coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Buscando mejor servidor de descarga para ${ep.name}...")
-                                val videos = source.getVideoList(ep).filter { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
-                                val bestVideo = videos.firstOrNull { it.quality.contains("Mediafire", ignoreCase = true) }
-                                    ?: videos.firstOrNull { it.format == "MP4" || it.format == "HLS" || it.videoUrl.contains(".mp4") || it.videoUrl.contains(".m3u8") }
-                                    ?: videos.firstOrNull { it.quality.contains("Voe", ignoreCase = true) || it.quality.contains("StreamWish", ignoreCase = true) }
-                                    ?: videos.firstOrNull()
+                                try {
+                                    launch {
+                                        try {
+                                            snackbarHostState.showSnackbar("Buscando mejor servidor de descarga para ${ep.name}...", duration = SnackbarDuration.Short)
+                                        } catch (t: Throwable) {}
+                                    }
+                                    val videos: List<VideoSource> = withContext(Dispatchers.IO) {
+                                        try {
+                                            source.getVideoList(ep).filter { v -> v.videoUrl.isNotBlank() && v.format != "NOTICE" }
+                                        } catch (t: Throwable) {
+                                            emptyList()
+                                        }
+                                    }
+                                    val bestVideo: VideoSource? = videos.firstOrNull { v -> v.quality.contains("Mediafire", ignoreCase = true) }
+                                        ?: videos.firstOrNull { v -> v.format == "MP4" || v.format == "HLS" || v.videoUrl.contains(".mp4") || v.videoUrl.contains(".m3u8") }
+                                        ?: videos.firstOrNull { v -> v.quality.contains("Voe", ignoreCase = true) || v.quality.contains("StreamWish", ignoreCase = true) }
+                                        ?: videos.firstOrNull()
 
-                                if (bestVideo != null) {
-                                    downloadManager.downloadEpisode(selectedMedia!!, ep, bestVideo.videoUrl, bestVideo.headers)
-                                    snackbarHostState.showSnackbar("Descargando ${ep.name} en MP4 (${bestVideo.quality})...")
-                                } else {
-                                    snackbarHostState.showSnackbar("No hay servidores disponibles para descargar este episodio.")
+                                    if (bestVideo != null) {
+                                        downloadManager.downloadEpisode(selectedMedia!!, ep, bestVideo.videoUrl, bestVideo.headers)
+                                        snackbarHostState.showSnackbar("Descargando ${ep.name} en MP4 (${bestVideo.quality})...")
+                                    } else {
+                                        snackbarHostState.showSnackbar("No hay servidores disponibles para descargar este episodio.")
+                                    }
+                                } catch (t: Throwable) {
+                                    snackbarHostState.showSnackbar("Error al iniciar descarga: ${t.localizedMessage ?: "Fallo de conexión"}")
                                 }
                             }
                         },
                         onDownloadChapter = { ch, source ->
                             coroutineScope.launch {
-                                val pages = source.getPageList(ch)
-                                if (pages.isNotEmpty()) {
-                                    downloadManager.downloadChapter(selectedMedia!!, ch, pages.map { it.imageUrl })
-                                    snackbarHostState.showSnackbar("Descarga iniciada: ${ch.name}")
-                                } else {
-                                    snackbarHostState.showSnackbar("No se pudieron cargar páginas para descargar.")
+                                try {
+                                    val pages: List<MangaPage> = withContext(Dispatchers.IO) {
+                                        source.getPageList(ch)
+                                    }
+                                    if (pages.isNotEmpty()) {
+                                        downloadManager.downloadChapter(selectedMedia!!, ch, pages.map { p -> p.imageUrl })
+                                        snackbarHostState.showSnackbar("Descarga iniciada: ${ch.name}")
+                                    } else {
+                                        snackbarHostState.showSnackbar("No se pudieron cargar páginas para descargar.")
+                                    }
+                                } catch (t: Throwable) {
+                                    snackbarHostState.showSnackbar("Error al descargar capítulo: ${t.localizedMessage ?: "Error de red"}")
                                 }
                             }
                         }
@@ -1496,9 +1538,14 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
             exoPlayer?.let { player ->
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            this.player = player
-                            useController = true
+                        try {
+                            PlayerView(ctx).apply {
+                                this.player = player
+                                useController = true
+                            }
+                        } catch (t: Throwable) {
+                            errorMessage = "Error al iniciar el reproductor nativo: ${t.localizedMessage}. Toca 'Navegador 🌐' para verlo externamente."
+                            android.view.View(ctx)
                         }
                     },
                     onRelease = { pv ->

@@ -34,6 +34,38 @@ interface CrossSource {
     suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = emptyList()
 }
 
+object PureBase64 {
+    private const val BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+    fun decode(input: String): String {
+        return try {
+            val clean = input.trim().replace("\r", "").replace("\n", "").replace(" ", "")
+            if (clean.isEmpty()) return ""
+
+            val output = java.io.ByteArrayOutputStream()
+            var buffer = 0
+            var bitsCollected = 0
+
+            for (ch in clean) {
+                if (ch == '=') break
+                val value = BASE64_CHARS.indexOf(ch)
+                if (value >= 0) {
+                    buffer = (buffer shl 6) or value
+                    bitsCollected += 6
+                    if (bitsCollected >= 8) {
+                        bitsCollected -= 8
+                        val byteVal = (buffer shr bitsCollected) and 0xFF
+                        output.write(byteVal)
+                    }
+                }
+            }
+            output.toString("UTF-8")
+        } catch (t: Throwable) {
+            ""
+        }
+    }
+}
+
 /**
  * Catálogo de Anime con Scraping Dinámico en Español (JKanime) para reproducir el episodio EXACTO y REAL
  */
@@ -141,7 +173,7 @@ class AniListAnimeSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -374,7 +406,7 @@ class AniListAnimeSource : CrossSource {
                             val b64 = m.groupValues[1]
                             val sName = m.groupValues[2]
                             try {
-                                val decodedRaw = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                val decodedRaw = PureBase64.decode(b64).trim()
                                 val decoded = normalizeUrl("https://jkanime.net/", decodedRaw)
                                 if (decoded.startsWith("http")) {
                                     val isDirectMedia = decoded.endsWith(".mp4", ignoreCase = true) || decoded.contains(".m3u8", ignoreCase = true)
@@ -388,7 +420,7 @@ class AniListAnimeSource : CrossSource {
                                         )
                                     )
                                 }
-                            } catch (e: Exception) {}
+                            } catch (e: Throwable) {}
                         }
                     }
 
@@ -439,7 +471,7 @@ class AniListAnimeSource : CrossSource {
                         for (pm in playerMatches) {
                             val b64 = pm.groupValues[1]
                             try {
-                                val decodedRaw = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                val decodedRaw = PureBase64.decode(b64).trim()
                                 val decodedUrl = normalizeUrl("https://monoschinos.st/", decodedRaw)
                                 if (decodedUrl.startsWith("http")) {
                                     val serverName = when {
@@ -460,7 +492,7 @@ class AniListAnimeSource : CrossSource {
                                         )
                                     )
                                 }
-                            } catch (e: Exception) {}
+                            } catch (e: Throwable) {}
                         }
                         if (list.isNotEmpty()) break
                     } catch (e: Exception) {}
@@ -503,7 +535,7 @@ class AniListAnimeSource : CrossSource {
                     } catch (e: Exception) {}
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
 
@@ -692,7 +724,7 @@ class MangaDexDirectSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -754,7 +786,7 @@ class MangaDexDirectSource : CrossSource {
                     )
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -801,7 +833,7 @@ class MangaDexDirectSource : CrossSource {
 
                 if (feedData.length() < 500) break
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
 
@@ -844,7 +876,7 @@ class MangaDexDirectSource : CrossSource {
                     )
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         pages
@@ -912,7 +944,7 @@ class ZonaTMOSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -939,7 +971,7 @@ class ZonaTMOSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         Pair(media, chapters)
@@ -960,7 +992,7 @@ class ZonaTMOSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         pages
@@ -1020,7 +1052,7 @@ class WebtoonEsSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -1048,7 +1080,7 @@ class WebtoonEsSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         Pair(media, chapters)
@@ -1069,7 +1101,7 @@ class WebtoonEsSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         pages
@@ -1160,7 +1192,7 @@ class LectorMangasSource : CrossSource {
                     )
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -1217,7 +1249,7 @@ class LectorMangasSource : CrossSource {
                     )
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         Pair(resolvedMedia, chapters)
@@ -1248,7 +1280,7 @@ class LectorMangasSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         pages
@@ -1309,7 +1341,7 @@ class LectorXdSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -1335,7 +1367,7 @@ class LectorXdSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         Pair(media, chapters)
@@ -1356,7 +1388,7 @@ class LectorXdSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         pages
@@ -1411,7 +1443,7 @@ class OlympusSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         list
@@ -1437,7 +1469,7 @@ class OlympusSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         Pair(media, chapters)
@@ -1458,7 +1490,7 @@ class OlympusSource : CrossSource {
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         pages
