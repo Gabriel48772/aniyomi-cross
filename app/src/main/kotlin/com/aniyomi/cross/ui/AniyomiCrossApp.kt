@@ -83,6 +83,8 @@ fun AniyomiCrossApp() {
     var currentTab by remember { mutableStateOf(ScreenTab.ANIME) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
     var playingVideo by remember { mutableStateOf<VideoSource?>(null) }
+    var availableVideoSources by remember { mutableStateOf<List<VideoSource>?>(null) }
+    var selectedEpisodeForPlay by remember { mutableStateOf<EpisodeOrChapter?>(null) }
     var readingChapter by remember { mutableStateOf<EpisodeOrChapter?>(null) }
     var readingPages by remember { mutableStateOf<List<MangaPage>>(emptyList()) }
 
@@ -228,9 +230,17 @@ fun AniyomiCrossApp() {
                         onBack = { selectedMedia = null },
                         onPlayEpisode = { ep, source ->
                             coroutineScope.launch {
-                                val videos = source.getVideoList(ep)
+                                snackbarHostState.showSnackbar("Cargando servidores para ${ep.name}...")
+                                val videos = source.getVideoList(ep).filter { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
                                 if (videos.isNotEmpty()) {
-                                    playingVideo = videos.first()
+                                    if (videos.size == 1) {
+                                        playingVideo = videos.first()
+                                    } else {
+                                        selectedEpisodeForPlay = ep
+                                        availableVideoSources = videos
+                                    }
+                                } else {
+                                    snackbarHostState.showSnackbar("No se encontraron servidores disponibles para este episodio.")
                                 }
                             }
                         },
@@ -314,6 +324,84 @@ fun AniyomiCrossApp() {
                         )
                     }
                 }
+            }
+
+            // Selector de Servidor para Anime
+            if (availableVideoSources != null && selectedEpisodeForPlay != null) {
+                AlertDialog(
+                    onDismissRequest = {
+                        availableVideoSources = null
+                        selectedEpisodeForPlay = null
+                    },
+                    containerColor = Color(0xFF131524),
+                    title = {
+                        Column {
+                            Text(
+                                text = "Selecciona un Servidor",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = selectedEpisodeForPlay?.name ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    text = {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(availableVideoSources!!) { v ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            playingVideo = v
+                                            availableVideoSources = null
+                                            selectedEpisodeForPlay = null
+                                        },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2238))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = v.quality,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = if (v.format == "EMBED") "Reproductor Web Rápido" else "Reproductor Nativo HD",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (v.format == "EMBED") Color(0xFF00F0FF) else Color(0xFF10B981)
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Ver",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            availableVideoSources = null
+                            selectedEpisodeForPlay = null
+                        }) {
+                            Text("Cancelar", color = Color.LightGray)
+                        }
+                    }
+                )
             }
 
             // Diálogo de Actualización Automática
@@ -1202,76 +1290,103 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
     val context = LocalContext.current
     var isBuffering by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val isEmbed = videoSource.format == "EMBED"
 
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            val uri = Uri.parse(videoSource.videoUrl)
-            val mediaItem = ExoMediaItem.fromUri(uri)
+    val exoPlayer = remember(videoSource.videoUrl) {
+        if (isEmbed) null
+        else {
+            ExoPlayer.Builder(context).build().apply {
+                val uri = Uri.parse(videoSource.videoUrl)
+                val mediaItem = ExoMediaItem.fromUri(uri)
 
-            val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .setAllowCrossProtocolRedirects(true)
-                .setConnectTimeoutMs(20000)
-                .setReadTimeoutMs(20000)
+                val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(20000)
+                    .setReadTimeoutMs(20000)
 
-            val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
+                if (videoSource.headers.isNotEmpty()) {
+                    httpDataSourceFactory.setDefaultRequestProperties(videoSource.headers)
+                }
 
-            val mediaSource = if (videoSource.videoUrl.contains(".m3u8") || videoSource.format == "HLS") {
-                androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-            } else {
-                androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+                val mediaSource = if (videoSource.videoUrl.contains(".m3u8") || videoSource.format == "HLS") {
+                    androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+                } else {
+                    androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+                }
+
+                setMediaSource(mediaSource)
+                prepare()
+                playWhenReady = true
+
+                addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        isBuffering = (playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+                    }
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        isBuffering = false
+                        errorMessage = "El reproductor nativo no pudo reproducir este enlace directo. Toca 'Abrir en Navegador' para verlo sin interrupciones."
+                    }
+                })
             }
-
-            setMediaSource(mediaSource)
-            prepare()
-            playWhenReady = true
-
-            addListener(object : androidx.media3.common.Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    isBuffering = (playbackState == androidx.media3.common.Player.STATE_BUFFERING)
-                }
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    isBuffering = false
-                    errorMessage = "Error al conectar con el servidor de streaming. Revisa tu conexión o intenta con otro servidor."
-                }
-            })
         }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(exoPlayer) {
         onDispose {
-            exoPlayer.release()
+            exoPlayer?.release()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        if (videoSource.format == "EMBED") {
+        if (isEmbed) {
             AndroidView(
                 factory = { ctx ->
                     android.webkit.WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = true
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
+                        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
                         webChromeClient = android.webkit.WebChromeClient()
-                        webViewClient = android.webkit.WebViewClient()
-                        loadUrl(videoSource.videoUrl)
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                isBuffering = false
+                            }
+                        }
+
+                        val reqHeaders = mutableMapOf<String, String>()
+                        reqHeaders["Referer"] = videoSource.headers["Referer"] ?: "https://jkanime.net/"
+                        loadUrl(videoSource.videoUrl, reqHeaders)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = true
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+            exoPlayer?.let { player ->
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
-        if (videoSource.format != "EMBED" && isBuffering && errorMessage == null) {
+        if (!isEmbed && isBuffering && errorMessage == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -1281,11 +1396,52 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
             }
         }
 
+        // Barra superior con botón volver, calidad y opción de abrir en navegador
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.7f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Salir", tint = Color.White)
+            }
+
+            Text(
+                text = videoSource.quality,
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            )
+
+            Button(
+                onClick = {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(videoSource.videoUrl))
+                        context.startActivity(intent)
+                    } catch (e: Exception) {}
+                },
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("Navegador 🌐", fontSize = 12.sp)
+            }
+        }
+
         if (errorMessage != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.85f)),
+                    .background(Color.Black.copy(alpha = 0.90f)),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -1296,28 +1452,31 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(errorMessage ?: "", color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            errorMessage = null
-                            isBuffering = true
-                            exoPlayer.prepare()
-                            exoPlayer.play()
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(videoSource.videoUrl))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {}
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                        ) {
+                            Text("Abrir en Navegador (Chrome)")
                         }
-                    ) {
-                        Text("Reintentar Servidor")
+                        Button(
+                            onClick = {
+                                errorMessage = null
+                                isBuffering = true
+                                exoPlayer?.prepare()
+                                exoPlayer?.play()
+                            }
+                        ) {
+                            Text("Reintentar")
+                        }
                     }
                 }
             }
-        }
-
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.6f), shape = CircleShape)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Salir", tint = Color.White)
         }
     }
 }

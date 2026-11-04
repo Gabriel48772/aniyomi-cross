@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.2%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
+  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.3%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
   <img src="https://img.shields.io/badge/Idioma-100%25%20Espa%C3%B1ol-FF2A6D?style=for-the-badge" alt="Español">
   <img src="https://img.shields.io/badge/Plataformas-Android%20%7C%20Windows-8B5CF6?style=for-the-badge" alt="Plataformas">
 </p>
@@ -21,7 +21,7 @@
 
 | Plataforma | Archivo de Descarga | Tipo | Instrucciones Rápidas |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.2) | Descarga en tu celular y pulsa "Instalar". |
+| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.3) | Descarga en tu celular y pulsa "Instalar". |
 | 💻 **PC (Instalador Windows)** | [🚀 **Descargar Instalador para PC**](dist/Instalador-AniyomiCross-PC.bat?raw=true) | `.bat` / `.ps1` | Descarga y haz doble clic para instalar con acceso directo e icono. |
 | 💻 **PC (Ejecutable Directo)** | [📦 **Descargar Ejecutable .jar**](dist/AniyomiCross-PC.jar?raw=true) | `.jar` portable | Ejecuta directamente con doble clic o con `run-pc.bat`. |
 
@@ -30,23 +30,18 @@
 
 ---
 
-## 🆕 Novedades de la Versión 1.3.2
+## 🆕 Novedades de la Versión 1.3.3
 
-1. **Corrección Total del Reproductor y Descarga de Animes**:
-   - **Cero Animes Incorrectos**: Implementado algoritmo estricto de coincidencia fonética y de títulos (`isTitleMatch`). NUNCA volverá a descargarse ni reproducirse una serie equivocada (como Giant Killing, Fractale u otros animes de recomendaciones).
-   - **Servidores Directos en Español**: Decodificación en tiempo real de enlaces directos de JKanime, MonosChinos y AnimeFLV (Mediafire, Streamwish, VOE 1080p, Mp4upload, Streamtape y Mega).
-2. **Descarga en MP4 para ver Offline en el Teléfono**:
-   - Corrección en la app de Android del motor de almacenamiento y reproductor ExoPlayer.
-   - Ahora los animes descargados se guardan como archivos de video reales (`.mp4`) en el almacenamiento del dispositivo y se muestran de inmediato en la pestaña de **Descargas Offline** para reproducirlos sin conexión a internet.
-3. **Nuevo Logo e Icono Oficial de Aniyomi Cross**:
-   - Icono premium neón cyberpunk obsidian para la ventana, barra de tareas y accesos directos de PC.
-   - Icono adaptive vector y mipmaps de alta resolución para el launcher de Android.
-4. **Instalador Oficial para Windows PC**:
-   - Asistente de instalación interactivo con selección de directorio, creación de acceso directo en el Escritorio con icono y registro en el Menú Inicio de Windows.
-5. **Bibliotecas de Manga 100% en Español**:
-   - Catálogos integrados de ZonaTMO, LectorMangas, LINE Webtoons Oficial, LectorXD, Olympus Scanlation y MangaDex.
-   - Filtro estricto que descarta automáticamente cualquier capítulo que no esté en español.
-   - Descarga individual, masiva de todos los capítulos o por selección múltiple.
+1. **Corrección Total de Visualización de Anime en la APK Móvil**:
+   - **Selector de Servidores en Vivo**: Al presionar "Ver" en cualquier capítulo, se despliega una lista interactiva de todos los servidores disponibles en español (JKanime Magi 1080p, JKanime Desu, Streamwish, VOE, Filemoon, JKanime Oficial).
+   - **Eliminación de Pantallas Negras**: Se corrigió el conflicto en el que ExoPlayer intentaba reproducir enlaces web embebidos como si fueran archivos de video local, lo que disparaba la pantalla de error. Ahora se utiliza el motor web acelerado por hardware para reproductores web y ExoPlayer nativo para streams directos.
+   - **Botón "Abrir en Navegador (Chrome)"**: En la barra superior del reproductor se integró un acceso directo para abrir el episodio en Chrome o el navegador predeterminado del teléfono si el usuario prefiere su navegador habitual.
+2. **Corrección Total de Descargas y Almacenamiento**:
+   - Algoritmo de filtrado estricto `isTitleMatch` para evitar cualquier descarga de series incorrectas.
+   - Ensamblado de segmentos HLS `.ts` en archivos `.mp4` reales guardados en el almacenamiento para ver offline sin internet.
+3. **Logos e Instalador Oficial**:
+   - Icono oficial para Android (adaptive icons y mipmaps) y Windows PC (`.ico` y `.png`).
+   - Instalador guiado para Windows con accesos directos en el Escritorio y Menú Inicio.
 
 ---
 

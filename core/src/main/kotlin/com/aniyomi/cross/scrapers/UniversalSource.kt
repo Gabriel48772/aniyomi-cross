@@ -306,33 +306,7 @@ class AniListAnimeSource : CrossSource {
                     val episodePageUrl = "https://jkanime.net/$slug/$epInt/"
                     val epHtml = NetworkClient.get(episodePageUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
 
-                    // A) Servidores directos y decodificados desde 'var servers = [...]'
-                    val serversRegex = Regex("""var\s+servers\s*=\s*(\[\s*\{.*?\}\s*\]);""", RegexOption.DOT_MATCHES_ALL)
-                    val sMatch = serversRegex.find(epHtml)
-                    if (sMatch != null) {
-                        val jsonArr = sMatch.groupValues[1]
-                        val objRegex = Regex("""\{"remote":"([^"]+)","slug":"[^"]*","server":"([^"]+)"""")
-                        for (m in objRegex.findAll(jsonArr)) {
-                            val b64 = m.groupValues[1]
-                            val sName = m.groupValues[2]
-                            try {
-                                val decoded = String(java.util.Base64.getDecoder().decode(b64)).trim()
-                                if (decoded.startsWith("http")) {
-                                    val isMp4 = decoded.endsWith(".mp4", ignoreCase = true) || sName.equals("Mediafire", true) || sName.equals("Streamtape", true)
-                                    list.add(
-                                        VideoSource(
-                                            quality = "1080p FHD ($sName - Ep $epInt)",
-                                            videoUrl = decoded,
-                                            format = if (isMp4) "MP4" else if (decoded.contains(".m3u8")) "HLS" else "EMBED",
-                                            headers = mapOf("Referer" to "https://jkanime.net/", "User-Agent" to "Mozilla/5.0")
-                                        )
-                                    )
-                                }
-                            } catch (e: Exception) {}
-                        }
-                    }
-
-                    // B) Reproductores web oficiales JKanime (Desu / Magi)
+                    // A) Reproductores web oficiales JKanime (Desu / Magi) - Prioritarios
                     val playerUrlRegex = Regex("""video\[\d+\]\s*=\s*['"]<iframe[^>]+src=['"]([^'"]+)['"]""")
                     val playerMatches = playerUrlRegex.findAll(epHtml).map { it.groupValues[1] }.distinct().toList()
                     for ((idx, playerUrl) in playerMatches.withIndex()) {
@@ -371,6 +345,43 @@ class AniListAnimeSource : CrossSource {
                             }
                         } catch (e: Exception) {}
                     }
+
+                    // B) Servidores en la nube decodificados desde 'var servers = [...]'
+                    val serversRegex = Regex("""var\s+servers\s*=\s*(\[\s*\{.*?\}\s*\]);""", RegexOption.DOT_MATCHES_ALL)
+                    val sMatch = serversRegex.find(epHtml)
+                    if (sMatch != null) {
+                        val jsonArr = sMatch.groupValues[1]
+                        val objRegex = Regex("""\{"remote":"([^"]+)","slug":"[^"]*","server":"([^"]+)"""")
+                        for (m in objRegex.findAll(jsonArr)) {
+                            val b64 = m.groupValues[1]
+                            val sName = m.groupValues[2]
+                            try {
+                                val decoded = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                if (decoded.startsWith("http")) {
+                                    val isDirectMedia = decoded.endsWith(".mp4", ignoreCase = true) || decoded.contains(".m3u8", ignoreCase = true)
+                                    val label = if (sName.equals("Mediafire", true)) "Descarga Directa (Mediafire - Ep $epInt)" else "HD ($sName - Ep $epInt)"
+                                    list.add(
+                                        VideoSource(
+                                            quality = label,
+                                            videoUrl = decoded,
+                                            format = if (isDirectMedia) (if (decoded.contains(".m3u8")) "HLS" else "MP4") else "EMBED",
+                                            headers = mapOf("Referer" to "https://jkanime.net/", "User-Agent" to "Mozilla/5.0")
+                                        )
+                                    )
+                                }
+                            } catch (e: Exception) {}
+                        }
+                    }
+
+                    // C) Enlace directo al reproductor web completo de la página del episodio
+                    list.add(
+                        VideoSource(
+                            quality = "JKanime Web Oficial (Episodio $epInt)",
+                            videoUrl = episodePageUrl,
+                            format = "EMBED",
+                            headers = mapOf("Referer" to "https://jkanime.net/", "User-Agent" to "Mozilla/5.0")
+                        )
+                    )
                     if (list.isNotEmpty()) break
                 } catch (e: Exception) {}
             }

@@ -11,8 +11,8 @@ android {
     applicationId = "com.aniyomi.cross"
     minSdk = 24
     targetSdk = 36
-    versionCode = 8
-    versionName = "1.3.2"
+    versionCode = 9
+    versionName = "1.3.3"
   }
 
   buildTypes {

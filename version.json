@@ -1,8 +1,8 @@
 {
-  "version": "1.3.2",
-  "versionCode": 8,
+  "version": "1.3.3",
+  "versionCode": 9,
   "apkUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk",
   "jarUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar",
   "installerUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/Instalador-AniyomiCross-PC.bat",
-  "releaseNotes": "Versión 1.3.2: Corrección total de descarga y reproducción de anime (filtro estricto de series para que nunca descargue otro anime), descarga de episodios en formato MP4 nativo para ver offline tanto en PC como en Android, nuevo logo oficial para PC y Android, e instalador oficial para Windows PC."
+  "releaseNotes": "Versión 1.3.3: Corrección total de reproducción de anime en la APK móvil. Selector de múltiples servidores en tiempo real, reproductor web con aceleración y botón para abrir en Chrome, y separación estricta entre streams directos y páginas web para evitar pantallas negras."
 }

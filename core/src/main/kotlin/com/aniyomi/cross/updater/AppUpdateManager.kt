@@ -10,7 +10,7 @@ object AppUpdateManager {
 
     var githubRepoOwner = "Gabriel48772"
     var githubRepoName = "aniyomi-cross"
-    const val CURRENT_VERSION = "1.3.2"
+    const val CURRENT_VERSION = "1.3.3"
 
     private var dismissedVersion: String? = null
 
