@@ -21,13 +21,38 @@ object AppUpdateManager {
     )
 
     suspend fun checkLatestRelease(): UpdateInfo = withContext(Dispatchers.IO) {
+        // Primero intentar mediante version.json directo de GitHub (actualización instantánea con cada commit)
+        try {
+            val rawVersionUrl = "https://raw.githubusercontent.com/$githubRepoOwner/$githubRepoName/main/version.json"
+            val jsonStr = NetworkClient.get(rawVersionUrl)
+            val root = JSONObject(jsonStr)
+            val ver = root.optString("version", "1.0.0")
+            val apk = root.optString("apkUrl", "")
+            val jar = root.optString("jarUrl", "")
+            val notes = root.optString("releaseNotes", "Mejoras y correcciones generales.")
+
+            val isNewer = isVersionNewer(ver, CURRENT_VERSION)
+            if (isNewer) {
+                return@withContext UpdateInfo(
+                    hasUpdate = true,
+                    latestVersion = ver,
+                    apkDownloadUrl = apk.ifEmpty { null },
+                    jarDownloadUrl = jar.ifEmpty { null },
+                    releaseNotes = notes
+                )
+            }
+        } catch (e: Exception) {
+            // Intentar con Releases API
+        }
+
+        // Fallback: Releases API de GitHub
         try {
             val apiUrl = "https://api.github.com/repos/$githubRepoOwner/$githubRepoName/releases/latest"
             val jsonStr = NetworkClient.get(apiUrl, mapOf("Accept" to "application/vnd.github.v3+json"))
             val root = JSONObject(jsonStr)
 
             val tagName = root.optString("tag_name", "v1.0.0").removePrefix("v")
-            val body = root.optString("body", "Nueva actualización disponible en GitHub.")
+            val body = root.optString("body", "Nueva versión disponible.")
 
             var apkUrl: String? = null
             var jarUrl: String? = null
@@ -59,7 +84,7 @@ object AppUpdateManager {
         }
     }
 
-    private fun isVersionNewer(latest: String, current: String): Boolean {
+    fun isVersionNewer(latest: String, current: String): Boolean {
         val lParts = latest.split(".").mapNotNull { it.toIntOrNull() }
         val cParts = current.split(".").mapNotNull { it.toIntOrNull() }
         val maxLen = maxOf(lParts.size, cParts.size)

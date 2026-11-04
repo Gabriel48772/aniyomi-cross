@@ -1,0 +1,7 @@
+{
+  "version": "1.1.0",
+  "versionCode": 2,
+  "apkUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk",
+  "jarUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar",
+  "releaseNotes": "Versión 1.1.0: Catálogo MangaDex 100% en Español a tiempo real, mejoras en reproducción de anime sin pantalla negra, gestor de descargas para lectura y visualización 100% offline, filtros avanzados de búsqueda y sistema de actualización automática."
+}

@@ -38,6 +38,13 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.aniyomi.cross.downloader.CrossDownloadManager
+import com.aniyomi.cross.downloader.OfflineStorageManager
+import com.aniyomi.cross.downloader.OfflineMedia
+import com.aniyomi.cross.updater.AppUpdateManager
+import java.io.File
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import com.aniyomi.cross.model.*
 import com.aniyomi.cross.repository.ExtensionRepositoryManager
 import com.aniyomi.cross.scrapers.AniListAnimeSource
@@ -59,6 +66,7 @@ fun AniyomiCrossApp() {
     val coroutineScope = rememberCoroutineScope()
     val repoManager = remember { ExtensionRepositoryManager() }
     val downloadManager = remember { CrossDownloadManager(context) }
+    val offlineStorage = remember { OfflineStorageManager(File(context.getExternalFilesDir(null) ?: context.filesDir, "AniyomiCrossDownloads")) }
 
     val animeSource = remember { AniListAnimeSource() }
     val mangaSource = remember { MangaDexDirectSource() }
@@ -68,6 +76,18 @@ fun AniyomiCrossApp() {
     var playingVideo by remember { mutableStateOf<VideoSource?>(null) }
     var readingChapter by remember { mutableStateOf<EpisodeOrChapter?>(null) }
     var readingPages by remember { mutableStateOf<List<MangaPage>>(emptyList()) }
+
+    // Estado del auto-actualizador
+    var updateInfo by remember { mutableStateOf<AppUpdateManager.UpdateInfo?>(null) }
+    var isUpdating by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        val info = AppUpdateManager.checkLatestRelease()
+        if (info.hasUpdate) {
+            updateInfo = info
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -159,6 +179,7 @@ fun AniyomiCrossApp() {
                                 val videos = source.getVideoList(ep)
                                 if (videos.isNotEmpty()) {
                                     downloadManager.downloadEpisode(selectedMedia!!, ep, videos.first().videoUrl)
+                                    offlineStorage.downloadAnimeEpisode(selectedMedia!!, ep, videos.first().videoUrl) { }
                                 }
                             }
                         },
@@ -167,6 +188,7 @@ fun AniyomiCrossApp() {
                                 val pages = source.getPageList(ch)
                                 if (pages.isNotEmpty()) {
                                     downloadManager.downloadChapter(selectedMedia!!, ch, pages.map { it.imageUrl })
+                                    offlineStorage.downloadMangaChapter(selectedMedia!!, ch, pages) { }
                                 }
                             }
                         }
@@ -190,10 +212,100 @@ fun AniyomiCrossApp() {
                             repoManager = repoManager
                         )
                         ScreenTab.DOWNLOADS -> DownloadsView(
-                            downloadManager = downloadManager
+                            downloadManager = downloadManager,
+                            offlineStorage = offlineStorage,
+                            onReadOfflineManga = { offlineItem ->
+                                val pageFiles = offlineItem.localFileOrDir.listFiles()
+                                    ?.filter { it.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp") }
+                                    ?.sortedBy { it.name }
+                                    ?: emptyList()
+                                val localPages = pageFiles.mapIndexed { idx, f ->
+                                    MangaPage(index = idx + 1, imageUrl = "file://${f.absolutePath}")
+                                }
+                                if (localPages.isNotEmpty()) {
+                                    readingPages = localPages
+                                    readingChapter = EpisodeOrChapter(
+                                        id = offlineItem.id,
+                                        name = "${offlineItem.title} - ${offlineItem.subTitle}",
+                                        number = 1f,
+                                        url = ""
+                                    )
+                                }
+                            },
+                            onPlayOfflineAnime = { offlineItem ->
+                                playingVideo = VideoSource(
+                                    quality = "Offline (Local)",
+                                    videoUrl = Uri.fromFile(offlineItem.localFileOrDir).toString(),
+                                    format = "MP4"
+                                )
+                            }
                         )
                     }
                 }
+            }
+
+            // Diálogo de Actualización Automática
+            if (updateInfo != null) {
+                AlertDialog(
+                    onDismissRequest = { if (!isUpdating) updateInfo = null },
+                    title = {
+                        Text("¡Nueva Versión Disponible (v${updateInfo?.latestVersion})!", color = Color.White, fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Column {
+                            Text(updateInfo?.releaseNotes ?: "Mejoras generales y nuevos contenidos.", color = Color.LightGray)
+                            if (isUpdating) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                LinearProgressIndicator(progress = { updateProgress }, modifier = Modifier.fillMaxWidth())
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Descargando actualización: ${(updateProgress * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        if (!isUpdating) {
+                            Button(
+                                onClick = {
+                                    val downloadUrl = updateInfo?.apkDownloadUrl ?: "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk"
+                                    isUpdating = true
+                                    coroutineScope.launch {
+                                        val apkFile = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "AniyomiCross-update.apk")
+                                        val success = AppUpdateManager.downloadUpdate(downloadUrl, apkFile) { p ->
+                                            updateProgress = p
+                                        }
+                                        isUpdating = false
+                                        if (success && apkFile.exists()) {
+                                            updateInfo = null
+                                            try {
+                                                val contentUri = FileProvider.getUriForFile(
+                                                    context,
+                                                    "${context.packageName}.provider",
+                                                    apkFile
+                                                )
+                                                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(contentUri, "application/vnd.android.package-archive")
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(installIntent)
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text("Actualizar Ahora")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        if (!isUpdating) {
+                            TextButton(onClick = { updateInfo = null }) {
+                                Text("Más tarde", color = Color.Gray)
+                            }
+                        }
+                    }
+                )
             }
         }
     }
@@ -211,6 +323,7 @@ fun MediaCatalogView(
     var selectedGenre by remember { mutableStateOf("Todos") }
     var selectedSort by remember { mutableStateOf("POPULARITY_DESC") }
     var selectedCountry by remember { mutableStateOf("TODOS") }
+    var isRealtimeMode by remember { mutableStateOf(false) }
 
     var items by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -230,13 +343,17 @@ fun MediaCatalogView(
                 isLoadingMore = true
             }
 
-            val newItems = source.filter(
-                query = searchQuery,
-                genre = if (selectedGenre == "Todos") null else selectedGenre,
-                sort = selectedSort,
-                country = if (selectedCountry == "TODOS") null else selectedCountry,
-                page = page
-            )
+            val newItems = if (isManga && isRealtimeMode && source is MangaDexDirectSource) {
+                source.getRealtimeUpdates(page)
+            } else {
+                source.filter(
+                    query = searchQuery,
+                    genre = if (selectedGenre == "Todos") null else selectedGenre,
+                    sort = selectedSort,
+                    country = if (selectedCountry == "TODOS") null else selectedCountry,
+                    page = page
+                )
+            }
 
             if (page == 1) {
                 items = newItems
@@ -300,6 +417,28 @@ fun MediaCatalogView(
         )
 
         Spacer(modifier = Modifier.height(10.dp))
+
+        // Modo de visualización para Manga (Populares o Tiempo Real)
+        if (isManga) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = !isRealtimeMode,
+                    onClick = { isRealtimeMode = false; applyFilter(1) },
+                    label = { Text("🔥 Populares") },
+                    shape = RoundedCornerShape(12.dp)
+                )
+                FilterChip(
+                    selected = isRealtimeMode,
+                    onClick = { isRealtimeMode = true; applyFilter(1) },
+                    label = { Text("⚡ Tiempo Real (Recientes)") },
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
 
         // Filtro de País/Tipo (Solo para Manga/Manhwa)
         if (isManga) {
@@ -742,12 +881,39 @@ fun MediaDetailView(
 @Composable
 fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
     val context = LocalContext.current
+    var isBuffering by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
-            val mediaItem = ExoMediaItem.fromUri(videoSource.videoUrl)
-            setMediaItem(mediaItem)
+            val uri = Uri.parse(videoSource.videoUrl)
+            val mediaItem = ExoMediaItem.fromUri(uri)
+
+            val dataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(20000)
+                .setReadTimeoutMs(20000)
+
+            val mediaSource = if (videoSource.videoUrl.contains(".m3u8") || videoSource.format == "HLS") {
+                androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            } else {
+                androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            }
+
+            setMediaSource(mediaSource)
             prepare()
             playWhenReady = true
+
+            addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    isBuffering = (playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    isBuffering = false
+                    errorMessage = "Error al conectar con el servidor de streaming. Revisa tu conexión o intenta con otro servidor."
+                }
+            })
         }
     }
 
@@ -767,6 +933,45 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (isBuffering && errorMessage == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Cargando video en HD...", color = Color.White, fontSize = 14.sp)
+                }
+            }
+        }
+
+        if (errorMessage != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFF43F5E), modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(errorMessage ?: "", color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            errorMessage = null
+                            isBuffering = true
+                            exoPlayer.prepare()
+                            exoPlayer.play()
+                        }
+                    ) {
+                        Text("Reintentar Servidor")
+                    }
+                }
+            }
+        }
 
         IconButton(
             onClick = onBack,
@@ -1115,58 +1320,189 @@ fun ExtensionsCatalogView(repoManager: ExtensionRepositoryManager) {
 }
 
 @Composable
-fun DownloadsView(downloadManager: CrossDownloadManager) {
+fun DownloadsView(
+    downloadManager: CrossDownloadManager,
+    offlineStorage: OfflineStorageManager,
+    onReadOfflineManga: (OfflineMedia) -> Unit,
+    onPlayOfflineAnime: (OfflineMedia) -> Unit
+) {
     val tasks by downloadManager.tasks.collectAsState()
+    var selectedSection by remember { mutableStateOf("MANGAS") }
+    var refreshKey by remember { mutableIntStateOf(0) }
+
+    val downloadedMangas = remember(refreshKey) { offlineStorage.getDownloadedMangas() }
+    val downloadedAnimes = remember(refreshKey) { offlineStorage.getDownloadedAnimes() }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(
-            text = "Descargas Offline",
+            text = "Gestor de Descargas Offline",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = Color.White
         )
         Text(
-            text = "Episodios y capítulos guardados para disfrutar sin gastar datos",
+            text = "Disfruta tus mangas y animes guardados 100% sin conexión a internet",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        if (tasks.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "No tienes descargas guardadas todavía.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.outline
+        // Selector de Categoría Offline
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedSection == "MANGAS",
+                onClick = { selectedSection = "MANGAS" },
+                label = { Text("📖 Mangas (${downloadedMangas.size})") },
+                shape = RoundedCornerShape(12.dp)
+            )
+            FilterChip(
+                selected = selectedSection == "ANIMES",
+                onClick = { selectedSection = "ANIMES" },
+                label = { Text("🎬 Animes (${downloadedAnimes.size})") },
+                shape = RoundedCornerShape(12.dp)
+            )
+            if (tasks.isNotEmpty()) {
+                FilterChip(
+                    selected = selectedSection == "ACTIVAS",
+                    onClick = { selectedSection = "ACTIVAS" },
+                    label = { Text("⏳ En Curso (${tasks.size})") },
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(tasks) { task ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = "${task.mediaTitle} - ${task.episodeOrChapterName}",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                progress = { task.progress },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (task.isCompleted) "Completado (Guardado localmente)" else "Descargando ${(task.progress * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (task.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        when (selectedSection) {
+            "MANGAS" -> {
+                if (downloadedMangas.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "No tienes capítulos de manga descargados.\nToca 'Descargar Capítulo' para leerlos sin internet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.outline,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(downloadedMangas) { item ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("${item.subTitle} • ${item.pageCountOrSize}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                    Button(
+                                        onClick = { onReadOfflineManga(item) },
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Leer Offline")
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = {
+                                            offlineStorage.deleteOfflineItem(item)
+                                            refreshKey++
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "ANIMES" -> {
+                if (downloadedAnimes.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "No tienes episodios de anime descargados.\nToca 'Descargar Episodio' para verlos offline.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.outline,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(downloadedAnimes) { item ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("${item.subTitle} • ${item.pageCountOrSize}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    Button(
+                                        onClick = { onPlayOfflineAnime(item) },
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Ver Offline")
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = {
+                                            offlineStorage.deleteOfflineItem(item)
+                                            refreshKey++
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "ACTIVAS" -> {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(tasks) { task ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "${task.mediaTitle} - ${task.episodeOrChapterName}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(
+                                    progress = { task.progress },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (task.isCompleted) "Completado y guardado en almacenamiento" else "Descargando ${(task.progress * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (task.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

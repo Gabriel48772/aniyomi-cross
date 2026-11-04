@@ -8,6 +8,9 @@ import com.aniyomi.cross.model.VideoSource
 import com.aniyomi.cross.repository.ExtensionRepositoryManager
 import com.aniyomi.cross.scrapers.AniListAnimeSource
 import com.aniyomi.cross.scrapers.MangaDexDirectSource
+import com.aniyomi.cross.downloader.OfflineStorageManager
+import com.aniyomi.cross.downloader.OfflineMedia
+import com.aniyomi.cross.updater.AppUpdateManager
 import okhttp3.Request
 import kotlinx.coroutines.*
 import kotlinx.coroutines.swing.Swing
@@ -64,6 +67,8 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
     private val repoManager = ExtensionRepositoryManager()
     private val animeSource = AniListAnimeSource()
     private val mangaSource = MangaDexDirectSource()
+    private val offlineStorage = OfflineStorageManager(File(System.getProperty("user.home"), "AniyomiCrossDownloads"))
+    private val offlineMediaList = mutableListOf<OfflineMedia>()
 
     // Contenedores principales
     private val mainContentPanel = JPanel(CardLayout())
@@ -128,6 +133,8 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         setupHeader()
         setupContentPanels()
         loadInitialData()
+        refreshOfflineDownloads()
+        checkForUpdates()
     }
 
     private fun setupHeader() {
@@ -334,6 +341,12 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         val searchField = createStyledTextField("Buscar manga o manhwa...")
 
+        val modeOptions = arrayOf(
+            "🔥 Más Populares en Español",
+            "⚡ Tiempo Real (Recién Actualizados)"
+        )
+        val modeCombo = createStyledComboBox(modeOptions)
+
         val typeOptions = arrayOf(
             "Todos (Manga + Manhwa)" to "TODOS",
             "🇰🇷 Solo Manhwa (Corea)" to "KR",
@@ -360,6 +373,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             pageLabel.text = "Página $mangaPage"
             prevBtn.isEnabled = mangaPage > 1
 
+            val isRealtime = modeCombo.selectedIndex == 1
             val q = searchField.text.trim().let { if (it == "Buscar manga o manhwa...") "" else it }
             val selectedGenre = genresList[genreCombo.selectedIndex]
             val selectedSort = sortOptions[sortCombo.selectedIndex].second
@@ -367,28 +381,37 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
             scope.launch {
                 mangaGridPanel.removeAll()
-                mangaGridPanel.add(createLoadingNotice("Cargando 50 cómics y carátulas oficiales (Pág. $mangaPage)..."))
+                mangaGridPanel.add(createLoadingNotice(if (isRealtime) "Cargando capítulos recién actualizados en Español..." else "Cargando cómics oficiales en Español (Pág. $mangaPage)..."))
                 mangaGridPanel.revalidate()
                 mangaGridPanel.repaint()
 
-                val results = mangaSource.filter(
-                    query = q,
-                    genre = if (selectedGenre == "Todos") null else selectedGenre,
-                    sort = selectedSort,
-                    country = selectedCountry,
-                    page = mangaPage
-                )
+                val results = if (isRealtime) {
+                    mangaSource.getRealtimeUpdates(mangaPage)
+                } else {
+                    mangaSource.filter(
+                        query = q,
+                        genre = if (selectedGenre == "Todos") null else selectedGenre,
+                        sort = selectedSort,
+                        country = selectedCountry,
+                        page = mangaPage
+                    )
+                }
                 renderMediaGrid(mangaGridPanel, results, isAnime = false)
             }
         }
 
         searchBtn.addActionListener { loadMangaPage(1) }
         searchField.addActionListener { loadMangaPage(1) }
+        modeCombo.addActionListener { loadMangaPage(1) }
         typeCombo.addActionListener { loadMangaPage(1) }
         genreCombo.addActionListener { loadMangaPage(1) }
         sortCombo.addActionListener { loadMangaPage(1) }
         prevBtn.addActionListener { if (mangaPage > 1) loadMangaPage(mangaPage - 1) }
         nextBtn.addActionListener { loadMangaPage(mangaPage + 1) }
+
+        val modeLbl = JLabel("Modo:")
+        modeLbl.foreground = Theme.TEXT_MUTED
+        modeLbl.font = Font("Segoe UI", Font.BOLD, 12)
 
         val searchLbl = JLabel("Explorar:")
         searchLbl.foreground = Theme.TEXT_MUTED
@@ -406,6 +429,8 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         sortLbl.foreground = Theme.TEXT_MUTED
         sortLbl.font = Font("Segoe UI", Font.BOLD, 12)
 
+        filterBar.add(modeLbl)
+        filterBar.add(modeCombo)
         filterBar.add(searchLbl)
         filterBar.add(searchField)
         filterBar.add(typeLbl)
@@ -477,41 +502,188 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
     private fun setupDownloadsTab() {
         downloadsPanel.isOpaque = false
 
-        val topBar = JPanel(FlowLayout(FlowLayout.LEFT, 16, 14))
+        val topBar = JPanel(BorderLayout(16, 10))
         topBar.background = Theme.BG_SURFACE
-        topBar.border = BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_COLOR)
+        topBar.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_COLOR),
+            EmptyBorder(12, 20, 12, 20)
+        )
 
-        val infoLabel = JLabel("Archivos descargados para ver o leer sin conexión a internet:")
-        infoLabel.font = Font("Segoe UI", Font.BOLD, 14)
-        infoLabel.foreground = Theme.TEXT_WHITE
-        topBar.add(infoLabel)
+        val infoLabel = JLabel("<html><font color='#ffffff' size='4'><b>Gestor de Contenido Offline</b></font><br><font color='#a0a5b9'>Lee tus mangas y mira tus animes guardados 100% sin conexión</font></html>")
+        val refreshBtn = createActionButton("🔄 Actualizar", Theme.BG_INPUT)
+
+        topBar.add(infoLabel, BorderLayout.WEST)
+        topBar.add(refreshBtn, BorderLayout.EAST)
 
         val list = JList(downloadsListModel)
         list.background = Theme.BG_MAIN
         list.foreground = Theme.TEXT_WHITE
         list.font = Font("Segoe UI", Font.PLAIN, 14)
-        list.selectionBackground = Theme.ACCENT_ROSE
+        list.selectionBackground = Theme.ACCENT_PURPLE
         list.selectionForeground = Color.WHITE
 
         val scroll = JScrollPane(list)
         scroll.border = EmptyBorder(10, 16, 10, 16)
         styleScrollBar(scroll)
 
-        val bottomBar = JPanel(FlowLayout(FlowLayout.RIGHT, 16, 12))
+        val bottomBar = JPanel(FlowLayout(FlowLayout.RIGHT, 14, 12))
         bottomBar.background = Theme.BG_SURFACE
         bottomBar.border = BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_COLOR)
 
-        val openFolderBtn = createActionButton("📂 Abrir Carpeta de Descargas", Theme.ACCENT_ROSE)
-        openFolderBtn.addActionListener {
-            val dir = File(System.getProperty("user.home"), "AniyomiCrossDownloads")
-            dir.mkdirs()
-            Desktop.getDesktop().open(dir)
+        val openOfflineBtn = createActionButton("▶ Abrir Seleccionado Offline", Theme.ACCENT_PURPLE)
+        val deleteOfflineBtn = createActionButton("🗑 Eliminar", Theme.BG_INPUT)
+        val openFolderBtn = createActionButton("📂 Abrir Carpeta", Theme.ACCENT_ROSE)
+
+        refreshBtn.addActionListener { refreshOfflineDownloads() }
+
+        openOfflineBtn.addActionListener {
+            val idx = list.selectedIndex
+            if (idx in offlineMediaList.indices) {
+                val item = offlineMediaList[idx]
+                if (item.type == ContentType.ANIME) {
+                    launchHtml5Player(item.title, item.subTitle, item.localFileOrDir.toURI().toString())
+                } else {
+                    val pageFiles = item.localFileOrDir.listFiles()
+                        ?.filter { it.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp") }
+                        ?.sortedBy { it.name }
+                        ?: emptyList()
+                    val pages = pageFiles.mapIndexed { pIdx, f ->
+                        MangaPage(index = pIdx + 1, imageUrl = f.toURI().toString())
+                    }
+                    if (pages.isNotEmpty()) {
+                        openMangaReader(
+                            MediaItem(id = item.id, title = item.title, url = "", coverUrl = "", type = ContentType.MANGA),
+                            EpisodeOrChapter(id = item.id, name = item.subTitle, number = 1f, url = ""),
+                            pages
+                        )
+                    } else {
+                        JOptionPane.showMessageDialog(this, "No se encontraron páginas en este capítulo.", "Aviso", JOptionPane.WARNING_MESSAGE)
+                    }
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "Selecciona un elemento de la lista para abrirlo sin internet.")
+            }
         }
+
+        deleteOfflineBtn.addActionListener {
+            val idx = list.selectedIndex
+            if (idx in offlineMediaList.indices) {
+                val item = offlineMediaList[idx]
+                val confirm = JOptionPane.showConfirmDialog(this, "¿Deseas eliminar '${item.title} - ${item.subTitle}' del disco?", "Confirmar Eliminación", JOptionPane.YES_NO_OPTION)
+                if (confirm == JOptionPane.YES_OPTION) {
+                    offlineStorage.deleteOfflineItem(item)
+                    refreshOfflineDownloads()
+                }
+            }
+        }
+
+        openFolderBtn.addActionListener {
+            try {
+                Desktop.getDesktop().open(offlineStorage.baseDir)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        bottomBar.add(deleteOfflineBtn)
         bottomBar.add(openFolderBtn)
+        bottomBar.add(openOfflineBtn)
 
         downloadsPanel.add(topBar, BorderLayout.NORTH)
         downloadsPanel.add(scroll, BorderLayout.CENTER)
         downloadsPanel.add(bottomBar, BorderLayout.SOUTH)
+    }
+
+    private fun refreshOfflineDownloads() {
+        scope.launch(Dispatchers.IO) {
+            val mangas = offlineStorage.getDownloadedMangas()
+            val animes = offlineStorage.getDownloadedAnimes()
+            withContext(Dispatchers.Swing) {
+                offlineMediaList.clear()
+                downloadsListModel.clear()
+                for (m in mangas) {
+                    offlineMediaList.add(m)
+                    downloadsListModel.addElement("[📖 MANGA] ${m.title} • ${m.subTitle} (${m.pageCountOrSize})")
+                }
+                for (a in animes) {
+                    offlineMediaList.add(a)
+                    downloadsListModel.addElement("[🎬 ANIME] ${a.title} • ${a.subTitle} (${a.pageCountOrSize})")
+                }
+                if (offlineMediaList.isEmpty()) {
+                    downloadsListModel.addElement("No tienes descargas aún. Descarga cualquier anime o manga para disfrutarlo aquí sin internet.")
+                }
+            }
+        }
+    }
+
+    private fun checkForUpdates() {
+        scope.launch {
+            val update = AppUpdateManager.checkLatestRelease()
+            if (update.hasUpdate) {
+                showDesktopUpdateDialog(update)
+            }
+        }
+    }
+
+    private fun showDesktopUpdateDialog(update: AppUpdateManager.UpdateInfo) {
+        val dialog = JDialog(this, "¡Nueva Actualización Disponible!", true)
+        dialog.setSize(540, 340)
+        dialog.setLocationRelativeTo(this)
+        dialog.contentPane.background = Theme.BG_SURFACE
+        dialog.layout = BorderLayout(15, 15)
+
+        val main = JPanel(BorderLayout(12, 12))
+        main.border = EmptyBorder(20, 24, 20, 24)
+        main.isOpaque = false
+
+        val title = JLabel("<html><font color='#ffffff' size='5'><b>Nueva versión v${update.latestVersion} disponible</b></font><br><font color='#8b5cf6'>Tu versión actual: v${AppUpdateManager.CURRENT_VERSION}</font></html>")
+        val notes = JTextArea(update.releaseNotes)
+        notes.isEditable = false
+        notes.background = Theme.BG_INPUT
+        notes.foreground = Theme.TEXT_MUTED
+        notes.font = Font("Segoe UI", Font.PLAIN, 12)
+        notes.lineWrap = true
+        notes.wrapStyleWord = true
+
+        val btnRow = JPanel(FlowLayout(FlowLayout.RIGHT, 10, 0))
+        btnRow.isOpaque = false
+        val cancelBtn = createActionButton("Más tarde", Theme.BG_INPUT)
+        val updateBtn = createActionButton("⬇ Descargar e Instalar Ahora", Theme.ACCENT_PURPLE)
+
+        cancelBtn.addActionListener { dialog.dispose() }
+        updateBtn.addActionListener {
+            val url = update.jarDownloadUrl ?: "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar"
+            updateBtn.isEnabled = false
+            updateBtn.text = "Descargando..."
+            scope.launch(Dispatchers.IO) {
+                val currentJar = File(AniyomiDesktopApp::class.java.protectionDomain.codeSource.location.toURI().path)
+                val updateJar = File(currentJar.parentFile, "AniyomiCross-PC-update.jar")
+                val success = AppUpdateManager.downloadUpdate(url, updateJar) { p ->
+                    SwingUtilities.invokeLater {
+                        updateBtn.text = "Descargando ${(p * 100).toInt()}%..."
+                    }
+                }
+                withContext(Dispatchers.Swing) {
+                    if (success && updateJar.exists()) {
+                        JOptionPane.showMessageDialog(dialog, "¡Actualización descargada!\nSe guardó en: ${updateJar.name}.\nReemplazando versión anterior...")
+                        dialog.dispose()
+                    } else {
+                        updateBtn.isEnabled = true
+                        updateBtn.text = "Reintentar Descarga"
+                    }
+                }
+            }
+        }
+
+        btnRow.add(cancelBtn)
+        btnRow.add(updateBtn)
+
+        main.add(title, BorderLayout.NORTH)
+        main.add(JScrollPane(notes), BorderLayout.CENTER)
+        main.add(btnRow, BorderLayout.SOUTH)
+
+        dialog.contentPane.add(main)
+        dialog.isVisible = true
     }
 
     private fun loadInitialData() {
@@ -720,8 +892,39 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         downloadBtn.addActionListener {
             val selected = jlist.selectedValue
             if (selected != null) {
-                downloadsListModel.addElement("[DESCARGADO] ${item.title} - ${selected.name}")
-                JOptionPane.showMessageDialog(dialog, "¡Descargando ${selected.name} gratis a tu equipo!", "Descargas Offline", JOptionPane.INFORMATION_MESSAGE)
+                downloadBtn.isEnabled = false
+                downloadBtn.text = "⏳ Descargando..."
+                scope.launch(Dispatchers.IO) {
+                    if (isAnime) {
+                        val videos = animeSource.getVideoList(selected)
+                        if (videos.isNotEmpty()) {
+                            val file = offlineStorage.downloadAnimeEpisode(item, selected, videos.first().videoUrl) { }
+                            withContext(Dispatchers.Swing) {
+                                downloadBtn.isEnabled = true
+                                downloadBtn.text = "⬇ Descargar Offline"
+                                if (file != null) {
+                                    refreshOfflineDownloads()
+                                    JOptionPane.showMessageDialog(dialog, "¡Episodio guardado exitosamente en tu equipo!\nPuedes reproducirlo 100% offline en la pestaña 'Descargas'.", "Descarga Completa", JOptionPane.INFORMATION_MESSAGE)
+                                }
+                            }
+                        }
+                    } else {
+                        val pages = mangaSource.getPageList(selected)
+                        if (pages.isNotEmpty()) {
+                            val dir = offlineStorage.downloadMangaChapter(item, selected, pages) { }
+                            withContext(Dispatchers.Swing) {
+                                downloadBtn.isEnabled = true
+                                downloadBtn.text = "⬇ Descargar Offline"
+                                if (dir != null) {
+                                    refreshOfflineDownloads()
+                                    JOptionPane.showMessageDialog(dialog, "¡Capítulo guardado exitosamente en tu equipo!\nPuedes leerlo 100% offline en la pestaña 'Descargas'.", "Descarga Completa", JOptionPane.INFORMATION_MESSAGE)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                JOptionPane.showMessageDialog(dialog, "Por favor selecciona un episodio o capítulo de la lista.")
             }
         }
 
@@ -794,14 +997,17 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                 <head>
                     <meta charset="utf-8">
                     <title>$title - $episodeName</title>
+                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <style>
                         body { margin: 0; background: #0a0b10; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
                         .header { width: 92%; max-width: 1100px; padding: 14px 0; display: flex; justify-content: space-between; align-items: center; }
                         h1 { margin: 0; font-size: 22px; color: #8b5cf6; }
                         span { color: #a0a5b9; font-size: 15px; }
-                        .player-box { width: 92%; max-width: 1100px; background: #000; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.9); border: 1px solid #282a40; }
+                        .player-box { width: 92%; max-width: 1100px; background: #000; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.9); border: 1px solid #282a40; position: relative; }
                         video { width: 100%; height: auto; max-height: 82vh; display: block; outline: none; }
-                        .footer { margin-top: 15px; color: #6b7280; font-size: 13px; }
+                        .footer { margin-top: 15px; color: #6b7280; font-size: 13px; display: flex; gap: 15px; align-items: center; }
+                        .btn { background: #1f2238; border: 1px solid #33385a; color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: 13px; font-weight: bold; }
+                        .btn:hover { background: #8b5cf6; border-color: #8b5cf6; }
                     </style>
                 </head>
                 <body>
@@ -810,12 +1016,44 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                         <span>$episodeName</span>
                     </div>
                     <div class="player-box">
-                        <video controls autoplay playsinline>
+                        <video id="video-element" controls autoplay playsinline crossorigin="anonymous">
                             <source src="$videoUrl" type="video/mp4">
                             Tu navegador no soporta video.
                         </video>
                     </div>
-                    <div class="footer">Aniyomi Cross • Cinema Desktop Edition</div>
+                    <div class="footer">
+                        <span>Aniyomi Cross • Cinema Player</span>
+                        <button class="btn" onclick="video.currentTime -= 10">⏪ -10s</button>
+                        <button class="btn" onclick="video.currentTime += 10">⏩ +10s</button>
+                        <button class="btn" onclick="toggleFs()">⛶ Pantalla Completa</button>
+                    </div>
+                    <script>
+                        const video = document.getElementById('video-element');
+                        const url = '$videoUrl';
+                        if (url.includes('.m3u8')) {
+                            if (Hls.isSupported()) {
+                                const hls = new Hls({ enableWorker: true });
+                                hls.loadSource(url);
+                                hls.attachMedia(video);
+                                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                                    video.play().catch(e => console.log('Autoplay'));
+                                });
+                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                video.src = url;
+                                video.play().catch(e => console.log('Autoplay'));
+                            }
+                        }
+                        function toggleFs() {
+                            if (!document.fullscreenElement) video.requestFullscreen();
+                            else document.exitFullscreen();
+                        }
+                        window.addEventListener('keydown', (e) => {
+                            if (e.code === 'Space') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+                            if (e.code === 'ArrowLeft') { video.currentTime -= 10; }
+                            if (e.code === 'ArrowRight') { video.currentTime += 10; }
+                            if (e.code === 'KeyF') { toggleFs(); }
+                        });
+                    </script>
                 </body>
                 </html>
             """.trimIndent()
