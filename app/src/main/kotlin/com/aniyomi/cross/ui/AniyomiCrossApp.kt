@@ -323,6 +323,7 @@ fun MediaCatalogView(
     var selectedGenre by remember { mutableStateOf("Todos") }
     var selectedSort by remember { mutableStateOf("POPULARITY_DESC") }
     var selectedCountry by remember { mutableStateOf("TODOS") }
+    var selectedStatus by remember { mutableStateOf("TODOS") }
     var isRealtimeMode by remember { mutableStateOf(false) }
 
     var items by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -351,6 +352,7 @@ fun MediaCatalogView(
                     genre = if (selectedGenre == "Todos") null else selectedGenre,
                     sort = selectedSort,
                     country = if (selectedCountry == "TODOS") null else selectedCountry,
+                    status = if (selectedStatus == "TODOS") null else selectedStatus,
                     page = page
                 )
             }
@@ -473,6 +475,32 @@ fun MediaCatalogView(
             }
             Spacer(modifier = Modifier.height(6.dp))
         }
+
+        // Filtro de Estado (Completos / En Emisión)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedStatus == "TODOS",
+                onClick = { selectedStatus = "TODOS"; applyFilter(1) },
+                label = { Text("Todos los Estados") },
+                shape = RoundedCornerShape(12.dp)
+            )
+            FilterChip(
+                selected = selectedStatus == "completed",
+                onClick = { selectedStatus = "completed"; applyFilter(1) },
+                label = { Text("✅ Solo Finalizados / Completos") },
+                shape = RoundedCornerShape(12.dp)
+            )
+            FilterChip(
+                selected = selectedStatus == "ongoing",
+                onClick = { selectedStatus = "ongoing"; applyFilter(1) },
+                label = { Text("⏳ En Emisión") },
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
 
         // Filtro de Géneros
         LazyRow(

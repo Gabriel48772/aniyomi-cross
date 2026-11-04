@@ -244,6 +244,12 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         )
 
         val searchField = createStyledTextField("Buscar anime por título...")
+        val statusOptions = arrayOf(
+            "Todos los Estados" to "TODOS",
+            "✅ Solo Finalizados / Completos" to "completed",
+            "⏳ Solo En Emisión" to "ongoing"
+        )
+        val statusCombo = createStyledComboBox(statusOptions.map { it.first }.toTypedArray())
         val genreCombo = createStyledComboBox(genresList.map { genreDisplayMap[it] ?: it }.toTypedArray())
         val sortCombo = createStyledComboBox(sortOptions.map { it.first }.toTypedArray())
 
@@ -268,6 +274,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             val q = searchField.text.trim().let { if (it == "Buscar anime por título...") "" else it }
             val selectedGenre = genresList[genreCombo.selectedIndex]
             val selectedSort = sortOptions[sortCombo.selectedIndex].second
+            val selectedStatus = statusOptions[statusCombo.selectedIndex].second
 
             scope.launch {
                 animeGridPanel.removeAll()
@@ -279,6 +286,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                     query = q,
                     genre = if (selectedGenre == "Todos") null else selectedGenre,
                     sort = selectedSort,
+                    status = if (selectedStatus == "TODOS") null else selectedStatus,
                     page = animePage
                 )
                 renderMediaGrid(animeGridPanel, results, isAnime = true)
@@ -287,6 +295,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         searchBtn.addActionListener { loadAnimePage(1) }
         searchField.addActionListener { loadAnimePage(1) }
+        statusCombo.addActionListener { loadAnimePage(1) }
         genreCombo.addActionListener { loadAnimePage(1) }
         sortCombo.addActionListener { loadAnimePage(1) }
         prevBtn.addActionListener { if (animePage > 1) loadAnimePage(animePage - 1) }
@@ -295,6 +304,10 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         val searchLbl = JLabel("Explorar:")
         searchLbl.foreground = Theme.TEXT_MUTED
         searchLbl.font = Font("Segoe UI", Font.BOLD, 12)
+
+        val statusLbl = JLabel("Estado:")
+        statusLbl.foreground = Theme.TEXT_MUTED
+        statusLbl.font = Font("Segoe UI", Font.BOLD, 12)
 
         val genreLbl = JLabel("Género:")
         genreLbl.foreground = Theme.TEXT_MUTED
@@ -306,6 +319,8 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         filterBar.add(searchLbl)
         filterBar.add(searchField)
+        filterBar.add(statusLbl)
+        filterBar.add(statusCombo)
         filterBar.add(genreLbl)
         filterBar.add(genreCombo)
         filterBar.add(sortLbl)
@@ -354,6 +369,14 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             "🇨🇳 Solo Manhua (China)" to "CN"
         )
         val typeCombo = createStyledComboBox(typeOptions.map { it.first }.toTypedArray())
+
+        val statusOptions = arrayOf(
+            "Todos los Estados" to "TODOS",
+            "✅ Finalizados / Completos" to "completed",
+            "⏳ En Emisión" to "ongoing"
+        )
+        val statusCombo = createStyledComboBox(statusOptions.map { it.first }.toTypedArray())
+
         val genreCombo = createStyledComboBox(genresList.map { genreDisplayMap[it] ?: it }.toTypedArray())
         val sortCombo = createStyledComboBox(sortOptions.map { it.first }.toTypedArray())
         val searchBtn = createActionButton("🔍 Filtrar", Theme.ACCENT_ROSE)
@@ -378,6 +401,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             val selectedGenre = genresList[genreCombo.selectedIndex]
             val selectedSort = sortOptions[sortCombo.selectedIndex].second
             val selectedCountry = typeOptions[typeCombo.selectedIndex].second
+            val selectedStatus = statusOptions[statusCombo.selectedIndex].second
 
             scope.launch {
                 mangaGridPanel.removeAll()
@@ -393,6 +417,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                         genre = if (selectedGenre == "Todos") null else selectedGenre,
                         sort = selectedSort,
                         country = selectedCountry,
+                        status = if (selectedStatus == "TODOS") null else selectedStatus,
                         page = mangaPage
                     )
                 }
@@ -404,6 +429,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         searchField.addActionListener { loadMangaPage(1) }
         modeCombo.addActionListener { loadMangaPage(1) }
         typeCombo.addActionListener { loadMangaPage(1) }
+        statusCombo.addActionListener { loadMangaPage(1) }
         genreCombo.addActionListener { loadMangaPage(1) }
         sortCombo.addActionListener { loadMangaPage(1) }
         prevBtn.addActionListener { if (mangaPage > 1) loadMangaPage(mangaPage - 1) }
@@ -421,6 +447,10 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         typeLbl.foreground = Theme.TEXT_MUTED
         typeLbl.font = Font("Segoe UI", Font.BOLD, 12)
 
+        val statusLbl = JLabel("Estado:")
+        statusLbl.foreground = Theme.TEXT_MUTED
+        statusLbl.font = Font("Segoe UI", Font.BOLD, 12)
+
         val genreLbl = JLabel("Género:")
         genreLbl.foreground = Theme.TEXT_MUTED
         genreLbl.font = Font("Segoe UI", Font.BOLD, 12)
@@ -435,6 +465,8 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         filterBar.add(searchField)
         filterBar.add(typeLbl)
         filterBar.add(typeCombo)
+        filterBar.add(statusLbl)
+        filterBar.add(statusCombo)
         filterBar.add(genreLbl)
         filterBar.add(genreCombo)
         filterBar.add(sortLbl)
