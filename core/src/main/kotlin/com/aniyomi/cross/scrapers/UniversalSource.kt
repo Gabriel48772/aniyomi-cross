@@ -192,6 +192,22 @@ class AniListAnimeSource : CrossSource {
         Pair(media, episodes)
     }
 
+    private fun normalizeUrl(baseUrl: String, url: String): String {
+        val trimmed = url.trim()
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.startsWith("//")) return "https:$trimmed"
+        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) return trimmed
+        return try {
+            java.net.URI(baseUrl).resolve(trimmed).toString()
+        } catch (e: Exception) {
+            val domain = if (baseUrl.startsWith("http")) {
+                val idx = baseUrl.indexOf("/", 8)
+                if (idx != -1) baseUrl.substring(0, idx) else baseUrl
+            } else baseUrl
+            if (trimmed.startsWith("/")) "$domain$trimmed" else "$domain/$trimmed"
+        }
+    }
+
     private fun isTitleMatch(candidates: List<String>, foundTitle: String, foundSlug: String): Boolean {
         val cleanFound = foundTitle.lowercase().replace(Regex("[^a-z0-9]"), " ").trim()
         val cleanSlug = foundSlug.lowercase().replace("-", " ").trim()
@@ -309,7 +325,9 @@ class AniListAnimeSource : CrossSource {
                     // A) Reproductores web oficiales JKanime (Desu / Magi) - Prioritarios
                     val playerUrlRegex = Regex("""video\[\d+\]\s*=\s*['"]<iframe[^>]+src=['"]([^'"]+)['"]""")
                     val playerMatches = playerUrlRegex.findAll(epHtml).map { it.groupValues[1] }.distinct().toList()
-                    for ((idx, playerUrl) in playerMatches.withIndex()) {
+                    for ((idx, playerUrlRaw) in playerMatches.withIndex()) {
+                        val playerUrl = normalizeUrl("https://jkanime.net/", playerUrlRaw)
+                        if (playerUrl.isBlank()) continue
                         val serverLabel = if (playerUrl.contains("umv")) "1080p FHD (JKanime Magi - Ep $epInt)" else "720p HD (JKanime Desu - Ep $epInt)"
                         list.add(
                             VideoSource(
@@ -329,8 +347,8 @@ class AniListAnimeSource : CrossSource {
                             val sourceRegex = Regex("""<source src=['"]([^'"]+)['"]""")
                             val streamMatch = sourceRegex.find(playerHtml)
                             if (streamMatch != null) {
-                                val streamUrl = streamMatch.groupValues[1]
-                                if (!streamUrl.contains("") && streamUrl.startsWith("http")) {
+                                val streamUrl = normalizeUrl("https://jkanime.net/", streamMatch.groupValues[1])
+                                if (streamUrl.isNotBlank() && streamUrl.startsWith("http")) {
                                     val isHls = streamUrl.contains(".m3u8")
                                     list.add(
                                         0,
@@ -356,7 +374,8 @@ class AniListAnimeSource : CrossSource {
                             val b64 = m.groupValues[1]
                             val sName = m.groupValues[2]
                             try {
-                                val decoded = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                val decodedRaw = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                val decoded = normalizeUrl("https://jkanime.net/", decodedRaw)
                                 if (decoded.startsWith("http")) {
                                     val isDirectMedia = decoded.endsWith(".mp4", ignoreCase = true) || decoded.contains(".m3u8", ignoreCase = true)
                                     val label = if (sName.equals("Mediafire", true)) "Descarga Directa (Mediafire - Ep $epInt)" else "HD ($sName - Ep $epInt)"
@@ -420,7 +439,8 @@ class AniListAnimeSource : CrossSource {
                         for (pm in playerMatches) {
                             val b64 = pm.groupValues[1]
                             try {
-                                val decodedUrl = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                val decodedRaw = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                                val decodedUrl = normalizeUrl("https://monoschinos.st/", decodedRaw)
                                 if (decodedUrl.startsWith("http")) {
                                     val serverName = when {
                                         decodedUrl.contains("filemoon") -> "Filemoon"
@@ -467,7 +487,7 @@ class AniListAnimeSource : CrossSource {
                             val iframeRegex = Regex("""<iframe[^>]+src=["']([^"']+)["']""")
                             val iframes = iframeRegex.findAll(aflvEpHtml).toList()
                             for (ifr in iframes) {
-                                val iUrl = ifr.groupValues[1]
+                                val iUrl = normalizeUrl("https://animeflv.or.at/", ifr.groupValues[1])
                                 if (iUrl.startsWith("http")) {
                                     list.add(
                                         VideoSource(

@@ -86,5 +86,7 @@ data class DownloadTask(
     val type: ContentType,
     var progress: Float = 0f,
     var isCompleted: Boolean = false,
-    var localPath: String = ""
+    var localPath: String = "",
+    var isFailed: Boolean = false,
+    var errorMessage: String = ""
 )

@@ -253,11 +253,16 @@ fun AniyomiCrossApp() {
                         },
                         onDownloadEpisode = { ep, source ->
                             coroutineScope.launch {
-                                val videos = source.getVideoList(ep)
-                                val validVideo = videos.firstOrNull { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
-                                if (validVideo != null) {
-                                    downloadManager.downloadEpisode(selectedMedia!!, ep, validVideo.videoUrl)
-                                    snackbarHostState.showSnackbar("Descarga iniciada: ${ep.name}")
+                                snackbarHostState.showSnackbar("Buscando mejor servidor de descarga para ${ep.name}...")
+                                val videos = source.getVideoList(ep).filter { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
+                                val bestVideo = videos.firstOrNull { it.quality.contains("Mediafire", ignoreCase = true) }
+                                    ?: videos.firstOrNull { it.format == "MP4" || it.format == "HLS" || it.videoUrl.contains(".mp4") || it.videoUrl.contains(".m3u8") }
+                                    ?: videos.firstOrNull { it.quality.contains("Voe", ignoreCase = true) || it.quality.contains("StreamWish", ignoreCase = true) }
+                                    ?: videos.firstOrNull()
+
+                                if (bestVideo != null) {
+                                    downloadManager.downloadEpisode(selectedMedia!!, ep, bestVideo.videoUrl, bestVideo.headers)
+                                    snackbarHostState.showSnackbar("Descargando ${ep.name} en MP4 (${bestVideo.quality})...")
                                 } else {
                                     snackbarHostState.showSnackbar("No hay servidores disponibles para descargar este episodio.")
                                 }
@@ -1285,6 +1290,39 @@ fun MediaDetailView(
     }
 }
 
+fun launchExternalBrowser(context: android.content.Context, rawUrl: String) {
+    try {
+        var cleanUrl = rawUrl.trim()
+        if (cleanUrl.startsWith("//")) {
+            cleanUrl = "https:$cleanUrl"
+        } else if (!cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
+            cleanUrl = "https://$cleanUrl"
+        }
+        val uri = Uri.parse(cleanUrl)
+        val viewIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val chooserIntent = Intent.createChooser(viewIntent, "Abrir video con...").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooserIntent)
+    } catch (e: Throwable) {
+        try {
+            var cleanUrl = rawUrl.trim()
+            if (cleanUrl.startsWith("//")) cleanUrl = "https:$cleanUrl"
+            else if (!cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
+                cleanUrl = "https://$cleanUrl"
+            }
+            val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(viewIntent)
+        } catch (e2: Throwable) {
+            android.widget.Toast.makeText(context, "No se pudo redirigir al navegador: ${e2.localizedMessage ?: "Error"}", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
 @Composable
 fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -1295,48 +1333,59 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
     val exoPlayer = remember(videoSource.videoUrl) {
         if (isEmbed) null
         else {
-            ExoPlayer.Builder(context).build().apply {
-                val uri = Uri.parse(videoSource.videoUrl)
-                val mediaItem = ExoMediaItem.fromUri(uri)
+            try {
+                ExoPlayer.Builder(context.applicationContext).build().apply {
+                    var cleanUrl = videoSource.videoUrl.trim()
+                    if (cleanUrl.startsWith("//")) cleanUrl = "https:$cleanUrl"
+                    val uri = Uri.parse(cleanUrl)
+                    val mediaItem = ExoMediaItem.fromUri(uri)
 
-                val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                    .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(20000)
-                    .setReadTimeoutMs(20000)
+                    val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                        .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                        .setAllowCrossProtocolRedirects(true)
+                        .setConnectTimeoutMs(20000)
+                        .setReadTimeoutMs(20000)
 
-                if (videoSource.headers.isNotEmpty()) {
-                    httpDataSourceFactory.setDefaultRequestProperties(videoSource.headers)
-                }
-
-                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
-
-                val mediaSource = if (videoSource.videoUrl.contains(".m3u8") || videoSource.format == "HLS") {
-                    androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-                } else {
-                    androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-                }
-
-                setMediaSource(mediaSource)
-                prepare()
-                playWhenReady = true
-
-                addListener(object : androidx.media3.common.Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        isBuffering = (playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+                    if (videoSource.headers.isNotEmpty()) {
+                        httpDataSourceFactory.setDefaultRequestProperties(videoSource.headers)
                     }
-                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                        isBuffering = false
-                        errorMessage = "El reproductor nativo no pudo reproducir este enlace directo. Toca 'Abrir en Navegador' para verlo sin interrupciones."
+
+                    val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
+
+                    val isHls = cleanUrl.contains(".m3u8", ignoreCase = true) || videoSource.format == "HLS"
+                    val mediaSource = if (isHls) {
+                        androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+                    } else {
+                        androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
                     }
-                })
+
+                    setMediaSource(mediaSource)
+                    prepare()
+                    playWhenReady = true
+
+                    addListener(object : androidx.media3.common.Player.Listener {
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            isBuffering = (playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+                        }
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            isBuffering = false
+                            errorMessage = "El servidor no respondió al reproductor nativo. Toca 'Navegador 🌐' para verlo sin interrupciones."
+                        }
+                    })
+                }
+            } catch (t: Throwable) {
+                errorMessage = "Error al inicializar reproductor: ${t.localizedMessage}. Usa 'Navegador 🌐' para reproducir externamente."
+                null
             }
         }
     }
 
     DisposableEffect(exoPlayer) {
         onDispose {
-            exoPlayer?.release()
+            try {
+                exoPlayer?.stop()
+                exoPlayer?.release()
+            } catch (t: Throwable) {}
         }
     }
 
@@ -1344,31 +1393,102 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
         if (isEmbed) {
             AndroidView(
                 factory = { ctx ->
-                    android.webkit.WebView(ctx).apply {
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
-                        settings.mediaPlaybackRequiresUserGesture = false
-                        settings.allowFileAccess = true
-                        settings.allowContentAccess = true
-                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-
-                        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
-                        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                        webChromeClient = android.webkit.WebChromeClient()
-                        webViewClient = object : android.webkit.WebViewClient() {
-                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                isBuffering = false
+                    try {
+                        android.webkit.WebView(ctx).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                mediaPlaybackRequiresUserGesture = false
+                                allowFileAccess = false
+                                allowContentAccess = false
+                                mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                setSupportMultipleWindows(false)
+                                javaScriptCanOpenWindowsAutomatically = false
                             }
-                        }
 
-                        val reqHeaders = mutableMapOf<String, String>()
-                        reqHeaders["Referer"] = videoSource.headers["Referer"] ?: "https://jkanime.net/"
-                        loadUrl(videoSource.videoUrl, reqHeaders)
+                            android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
+                                    if (newProgress >= 60) {
+                                        isBuffering = false
+                                    }
+                                }
+                                override fun onJsAlert(view: android.webkit.WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                                    result?.confirm()
+                                    return true
+                                }
+                                override fun onJsConfirm(view: android.webkit.WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                                    result?.confirm()
+                                    return true
+                                }
+                                override fun onJsPrompt(view: android.webkit.WebView?, url: String?, message: String?, defaultValue: String?, result: android.webkit.JsPromptResult?): Boolean {
+                                    result?.confirm()
+                                    return true
+                                }
+                            }
+
+                            webViewClient = object : android.webkit.WebViewClient() {
+                                override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                    super.onPageFinished(view, url)
+                                    isBuffering = false
+                                }
+
+                                override fun onReceivedError(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                                    super.onReceivedError(view, request, error)
+                                    if (request?.isForMainFrame == true) {
+                                        isBuffering = false
+                                    }
+                                }
+
+                                override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                                    val reqUri = request?.url ?: return false
+                                    val scheme = reqUri.scheme?.lowercase() ?: ""
+                                    if (scheme != "http" && scheme != "https") {
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, reqUri).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            ctx.startActivity(intent)
+                                        } catch (t: Throwable) {}
+                                        return true
+                                    }
+                                    return false
+                                }
+                            }
+
+                            var cleanUrl = videoSource.videoUrl.trim()
+                            if (cleanUrl.startsWith("//")) cleanUrl = "https:$cleanUrl"
+                            else if (!cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
+                                cleanUrl = "https://$cleanUrl"
+                            }
+                            val reqHeaders = mutableMapOf<String, String>()
+                            reqHeaders["Referer"] = videoSource.headers["Referer"] ?: "https://jkanime.net/"
+                            reqHeaders["User-Agent"] = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                            loadUrl(cleanUrl, reqHeaders)
+                        }
+                    } catch (t: Throwable) {
+                        errorMessage = "No se pudo cargar el reproductor web integrado: ${t.localizedMessage}"
+                        android.view.View(ctx)
                     }
+                },
+                onRelease = { wv ->
+                    try {
+                        (wv as? android.webkit.WebView)?.let {
+                            it.stopLoading()
+                            it.loadUrl("about:blank")
+                            it.clearHistory()
+                            it.removeAllViews()
+                            it.destroy()
+                        }
+                    } catch (t: Throwable) {}
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -1380,6 +1500,11 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
                             this.player = player
                             useController = true
                         }
+                    },
+                    onRelease = { pv ->
+                        try {
+                            (pv as? PlayerView)?.player = null
+                        } catch (t: Throwable) {}
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -1425,10 +1550,7 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
 
             Button(
                 onClick = {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(videoSource.videoUrl))
-                        context.startActivity(intent)
-                    } catch (e: Exception) {}
+                    launchExternalBrowser(context, videoSource.videoUrl)
                 },
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -1455,10 +1577,7 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(videoSource.videoUrl))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {}
+                                launchExternalBrowser(context, videoSource.videoUrl)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                         ) {
@@ -1994,9 +2113,17 @@ fun DownloadsView(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = if (task.isCompleted) "Completado y guardado en almacenamiento" else "Descargando ${(task.progress * 100).toInt()}%",
+                                    text = when {
+                                        task.isCompleted -> "Completado y guardado en almacenamiento"
+                                        task.isFailed -> "Fallo: ${task.errorMessage.ifBlank { "Error al descargar video MP4" }}"
+                                        else -> "Descargando ${(task.progress * 100).toInt()}%"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (task.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = when {
+                                        task.isCompleted -> MaterialTheme.colorScheme.primary
+                                        task.isFailed -> Color(0xFFF43F5E)
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             }
                         }

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.3%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
+  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.4%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
   <img src="https://img.shields.io/badge/Idioma-100%25%20Espa%C3%B1ol-FF2A6D?style=for-the-badge" alt="Español">
   <img src="https://img.shields.io/badge/Plataformas-Android%20%7C%20Windows-8B5CF6?style=for-the-badge" alt="Plataformas">
 </p>
@@ -21,7 +21,7 @@
 
 | Plataforma | Archivo de Descarga | Tipo | Instrucciones Rápidas |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.3) | Descarga en tu celular y pulsa "Instalar". |
+| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.4) | Descarga en tu celular y pulsa "Instalar". |
 | 💻 **PC (Instalador Windows)** | [🚀 **Descargar Instalador para PC**](dist/Instalador-AniyomiCross-PC.bat?raw=true) | `.bat` / `.ps1` | Descarga y haz doble clic para instalar con acceso directo e icono. |
 | 💻 **PC (Ejecutable Directo)** | [📦 **Descargar Ejecutable .jar**](dist/AniyomiCross-PC.jar?raw=true) | `.jar` portable | Ejecuta directamente con doble clic o con `run-pc.bat`. |
 
@@ -30,18 +30,17 @@
 
 ---
 
-## 🆕 Novedades de la Versión 1.3.3
+## 🆕 Novedades de la Versión 1.3.4
 
-1. **Corrección Total de Visualización de Anime en la APK Móvil**:
-   - **Selector de Servidores en Vivo**: Al presionar "Ver" en cualquier capítulo, se despliega una lista interactiva de todos los servidores disponibles en español (JKanime Magi 1080p, JKanime Desu, Streamwish, VOE, Filemoon, JKanime Oficial).
-   - **Eliminación de Pantallas Negras**: Se corrigió el conflicto en el que ExoPlayer intentaba reproducir enlaces web embebidos como si fueran archivos de video local, lo que disparaba la pantalla de error. Ahora se utiliza el motor web acelerado por hardware para reproductores web y ExoPlayer nativo para streams directos.
-   - **Botón "Abrir en Navegador (Chrome)"**: En la barra superior del reproductor se integró un acceso directo para abrir el episodio en Chrome o el navegador predeterminado del teléfono si el usuario prefiere su navegador habitual.
-2. **Corrección Total de Descargas y Almacenamiento**:
-   - Algoritmo de filtrado estricto `isTitleMatch` para evitar cualquier descarga de series incorrectas.
-   - Ensamblado de segmentos HLS `.ts` en archivos `.mp4` reales guardados en el almacenamiento para ver offline sin internet.
-3. **Logos e Instalador Oficial**:
-   - Icono oficial para Android (adaptive icons y mipmaps) y Windows PC (`.ico` y `.png`).
-   - Instalador guiado para Windows con accesos directos en el Escritorio y Menú Inicio.
+1. **Corrección Crítica de Cierre Inesperado (Crash) en Móvil**:
+   - Se resolvió la falla donde la app se cerraba sola al presionar ver cualquier capítulo de anime.
+   - Protección integral de hilos en WebView y ExoPlayer: bloqueo de esquemas externos no controlados (`intent://`, `market://`), captura segura de JavaScript alerts/dialogs y aislamiento en el ciclo de vida de Jetpack Compose con aceleración de hardware activa.
+2. **Corrección del Botón "Abrir en Navegador"**:
+   - Ahora el botón "Navegador 🌐" normaliza automáticamente el enlace, añade la bandera de actividad nueva (`FLAG_ACTIVITY_NEW_TASK`) y abre el selector universal del sistema con opciones para Chrome, Brave, Firefox, VLC o el reproductor preferido.
+3. **Descargas 100% Reales en MP4**:
+   - Se implementó un extractor inteligente para resolver streams multimedia reales (`.mp4` o `.m3u8`) a partir de enlaces de servidores y páginas web (Mediafire directo, Voe, Streamwish, JKanime).
+   - Verificación estricta de formato: descarta páginas de error HTML y garantiza archivos de video válidos y reproducibles sin conexión.
+   - Diagnóstico visible del estado de descargas en tiempo real.
 
 ---
 

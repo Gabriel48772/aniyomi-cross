@@ -1157,9 +1157,15 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                 try {
                     if (isAnime) {
                         val videos = animeSource.getVideoList(ch)
-                        if (videos.isNotEmpty()) {
-                            offlineStorage.downloadAnimeEpisode(media, ch, videos.first().videoUrl) { }
-                            downloadedCount++
+                        val bestVideo = videos.firstOrNull { it.quality.contains("Mediafire", ignoreCase = true) }
+                            ?: videos.firstOrNull { it.format == "MP4" || it.format == "HLS" || it.videoUrl.contains(".mp4") || it.videoUrl.contains(".m3u8") }
+                            ?: videos.firstOrNull { it.quality.contains("Voe", ignoreCase = true) || it.quality.contains("StreamWish", ignoreCase = true) }
+                            ?: videos.firstOrNull { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
+                        if (bestVideo != null) {
+                            val file = offlineStorage.downloadAnimeEpisode(media, ch, bestVideo.videoUrl, bestVideo.headers) { }
+                            if (file != null && file.exists()) {
+                                downloadedCount++
+                            }
                         }
                     } else {
                         val pages = mangaSource.getPageList(ch)
