@@ -8,6 +8,7 @@ import com.aniyomi.cross.model.VideoSource
 import com.aniyomi.cross.repository.ExtensionRepositoryManager
 import com.aniyomi.cross.scrapers.AniListAnimeSource
 import com.aniyomi.cross.scrapers.MangaDexDirectSource
+import com.aniyomi.cross.scrapers.UnifiedSpanishMangaSource
 import com.aniyomi.cross.downloader.OfflineStorageManager
 import com.aniyomi.cross.downloader.OfflineMedia
 import com.aniyomi.cross.updater.AppUpdateManager
@@ -66,7 +67,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
     private val scope = CoroutineScope(Dispatchers.Swing + SupervisorJob())
     private val repoManager = ExtensionRepositoryManager()
     private val animeSource = AniListAnimeSource()
-    private val mangaSource = MangaDexDirectSource()
+    private val mangaSource = UnifiedSpanishMangaSource()
     private val offlineStorage = OfflineStorageManager(File(System.getProperty("user.home"), "AniyomiCrossDownloads"))
     private val offlineMediaList = mutableListOf<OfflineMedia>()
 
@@ -134,7 +135,21 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         setupContentPanels()
         loadInitialData()
         refreshOfflineDownloads()
-        checkForUpdates()
+        checkForUpdates(forceManualCheck = false)
+
+        // Verificador continuo de actualizaciones en segundo plano cada minuto
+        scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(60_000)
+                val update = AppUpdateManager.checkLatestRelease(forceManualCheck = false)
+                if (update.hasUpdate) {
+                    withContext(Dispatchers.Swing) {
+                        showDesktopUpdateDialog(update)
+                    }
+                    break
+                }
+            }
+        }
     }
 
     private fun setupHeader() {
@@ -156,7 +171,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         logoSub.font = Font("Segoe UI", Font.BOLD, 18)
         logoSub.foreground = Theme.ACCENT_PURPLE
 
-        val tagPill = JLabel(" v1.0 ")
+        val tagPill = JLabel(" v${AppUpdateManager.CURRENT_VERSION} ")
         tagPill.font = Font("Segoe UI", Font.BOLD, 11)
         tagPill.foreground = Theme.ACCENT_CYAN
         tagPill.border = RoundedBorder(Theme.ACCENT_CYAN, 8, 1)
@@ -174,6 +189,13 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         tabExtBtn = createNavButton("🧩 Extensiones", false)
         tabDownBtn = createNavButton("💾 Descargas", false)
 
+        val checkUpdateBtn = createActionButton("🔄 Actualizaciones", Theme.BG_INPUT)
+        checkUpdateBtn.toolTipText = "Verificar si hay nuevas actualizaciones en GitHub"
+        checkUpdateBtn.font = Font("Segoe UI", Font.BOLD, 12)
+        checkUpdateBtn.addActionListener {
+            checkForUpdates(forceManualCheck = true)
+        }
+
         tabAnimeBtn.addActionListener { selectTab("ANIME", tabAnimeBtn) }
         tabMangaBtn.addActionListener { selectTab("MANGA", tabMangaBtn) }
         tabExtBtn.addActionListener { selectTab("EXTENSIONS", tabExtBtn) }
@@ -183,6 +205,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         navTabs.add(tabMangaBtn)
         navTabs.add(tabExtBtn)
         navTabs.add(tabDownBtn)
+        navTabs.add(checkUpdateBtn)
 
         header.add(logoPanel, BorderLayout.WEST)
         header.add(navTabs, BorderLayout.EAST)
@@ -364,10 +387,23 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         val topSearchRow = JPanel(FlowLayout(FlowLayout.LEFT, 12, 4))
         topSearchRow.isOpaque = false
 
+        val sourceOptions = arrayOf(
+            "📚 ZonaTMO (TuMangaOnline)",
+            "⚡ MangaDex (Español)",
+            "📱 LINE Webtoon (Español)"
+        )
+        val sourceKeys = arrayOf("zonatmo", "mangadex", "webtoons_es")
+        val sourceCombo = createStyledComboBox(sourceOptions)
+
         val searchField = createStyledTextField("Buscar manga, manhwa o manhua...")
         val searchBtn = createActionButton("🔍 Buscar", Theme.ACCENT_ROSE)
         val toggleFiltersBtn = createActionButton("⚙ Filtros Avanzados ▼", Theme.BG_INPUT)
 
+        topSearchRow.add(JLabel("Biblioteca:").apply {
+            foreground = Theme.ACCENT_CYAN
+            font = Font("Segoe UI", Font.BOLD, 12)
+        })
+        topSearchRow.add(sourceCombo)
         topSearchRow.add(JLabel("Cómics:").apply {
             foreground = Theme.TEXT_MUTED
             font = Font("Segoe UI", Font.BOLD, 13)
@@ -472,6 +508,10 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         searchBtn.addActionListener { loadMangaPage(1) }
         searchField.addActionListener { loadMangaPage(1) }
+        sourceCombo.addActionListener {
+            mangaSource.activeSourceKey = sourceKeys[sourceCombo.selectedIndex]
+            loadMangaPage(1)
+        }
         modeCombo.addActionListener { loadMangaPage(1) }
         typeCombo.addActionListener { loadMangaPage(1) }
         statusCombo.addActionListener { loadMangaPage(1) }
@@ -655,27 +695,37 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         }
     }
 
-    private fun checkForUpdates() {
-        scope.launch {
-            val update = AppUpdateManager.checkLatestRelease()
-            if (update.hasUpdate) {
-                showDesktopUpdateDialog(update)
+    private fun checkForUpdates(forceManualCheck: Boolean = false) {
+        scope.launch(Dispatchers.IO) {
+            val update = AppUpdateManager.checkLatestRelease(forceManualCheck = forceManualCheck)
+            withContext(Dispatchers.Swing) {
+                if (update.hasUpdate) {
+                    showDesktopUpdateDialog(update)
+                } else if (forceManualCheck) {
+                    JOptionPane.showMessageDialog(
+                        this@AniyomiDesktopApp,
+                        "¡Estás al día!\nTienes instalada la versión más reciente (v${AppUpdateManager.CURRENT_VERSION}).",
+                        "Aniyomi Cross - Actualizaciones",
+                        JOptionPane.INFORMATION_MESSAGE
+                    )
+                }
             }
         }
     }
 
     private fun showDesktopUpdateDialog(update: AppUpdateManager.UpdateInfo) {
-        val dialog = JDialog(this, "¡Nueva Actualización Disponible!", true)
-        dialog.setSize(540, 340)
+        val dialog = JDialog(this, "Nueva Actualización Disponible - Aniyomi Cross", true)
+        dialog.setSize(560, 380)
         dialog.setLocationRelativeTo(this)
         dialog.contentPane.background = Theme.BG_SURFACE
         dialog.layout = BorderLayout(15, 15)
 
-        val main = JPanel(BorderLayout(12, 12))
-        main.border = EmptyBorder(20, 24, 20, 24)
+        val main = JPanel(BorderLayout(14, 14))
+        main.border = EmptyBorder(22, 24, 22, 24)
         main.isOpaque = false
 
-        val title = JLabel("<html><font color='#ffffff' size='5'><b>Nueva versión v${update.latestVersion} disponible</b></font><br><font color='#8b5cf6'>Tu versión actual: v${AppUpdateManager.getInstalledVersion()}</font></html>")
+        val title = JLabel("<html><font color='#ffffff' size='5'><b>¡Nueva versión disponible!</b></font><br>" +
+                "<font color='#a78bfa' size='4'>Versión actual: <b>v${update.currentVersion}</b> &nbsp;➔&nbsp; Nueva versión: <font color='#22c55e'><b>v${update.latestVersion}</b></font></font></html>")
         val notes = JTextArea(update.releaseNotes)
         notes.isEditable = false
         notes.background = Theme.BG_INPUT
@@ -687,7 +737,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         val btnRow = JPanel(FlowLayout(FlowLayout.RIGHT, 10, 0))
         btnRow.isOpaque = false
         val cancelBtn = createActionButton("Más tarde", Theme.BG_INPUT)
-        val updateBtn = createActionButton("⬇ Descargar e Instalar Ahora", Theme.ACCENT_PURPLE)
+        val updateBtn = createActionButton("⬇ Instalar v${update.latestVersion}", Theme.ACCENT_ROSE)
 
         cancelBtn.addActionListener {
             AppUpdateManager.dismissVersion(update.latestVersion)
@@ -1131,10 +1181,15 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
     private fun fetchImageFromNetwork(imageUrl: String): Image? {
         return try {
+            val ref = when {
+                imageUrl.contains("webtoon", ignoreCase = true) -> "https://www.webtoons.com/"
+                imageUrl.contains("zonatmo", ignoreCase = true) || imageUrl.contains("storage", ignoreCase = true) -> "https://zonatmo.org/"
+                else -> "https://mangadex.org/"
+            }
             val req = Request.Builder()
                 .url(imageUrl)
-                .header("User-Agent", "AniyomiCross/1.0.0 (https://github.com/Gabriel48772/aniyomi-cross)")
-                .header("Referer", "https://mangadex.org/")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Referer", ref)
                 .build()
             com.aniyomi.cross.network.NetworkClient.okHttpClient.newCall(req).execute().use { res ->
                 if (res.isSuccessful) {
@@ -1149,12 +1204,13 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
     private fun openMangaReader(media: MediaItem, chapter: EpisodeOrChapter, pages: List<MangaPage>) {
         val readerDialog = JDialog(this, "Lector Aniyomi - ${media.title} (${chapter.name})", true)
-        readerDialog.setSize(980, 950)
+        readerDialog.setSize(1020, 960)
         readerDialog.setLocationRelativeTo(this)
         readerDialog.contentPane.background = Color.BLACK
         readerDialog.layout = BorderLayout()
 
         var currentPageIndex = 0
+        var isWebtoonMode = false
 
         val topBar = JPanel(BorderLayout())
         topBar.background = Color(16, 17, 24)
@@ -1173,15 +1229,32 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         topBar.add(titleLbl, BorderLayout.WEST)
         topBar.add(pageStatus, BorderLayout.EAST)
 
-        val imageLabel = JLabel("Cargando página de MangaDex...", SwingConstants.CENTER)
+        // Contenedor CardLayout central: Alterna Modo Página y Cascada Webtoon en la MISMA ventana
+        val cardLayout = CardLayout()
+        val centerCardPanel = JPanel(cardLayout)
+        centerCardPanel.background = Color.BLACK
+
+        // --- MODO 1: LECTOR PÁGINA A PÁGINA ---
+        val imageLabel = JLabel("Cargando página...", SwingConstants.CENTER)
         imageLabel.background = Color.BLACK
         imageLabel.isOpaque = true
-        val scrollPane = JScrollPane(imageLabel)
-        scrollPane.border = null
-        scrollPane.verticalScrollBar.unitIncrement = 35
-        styleScrollBar(scrollPane)
+        val pageScrollPane = JScrollPane(imageLabel)
+        pageScrollPane.border = null
+        pageScrollPane.verticalScrollBar.unitIncrement = 35
+        styleScrollBar(pageScrollPane)
+        centerCardPanel.add(pageScrollPane, "PAGE")
 
-        // Barra inferior estilo Aniyomi con Slider interactivo y modos
+        // --- MODO 2: CASCADA CONTINUA WEBTOON (EN LA MISMA HOJA) ---
+        val webtoonContainer = JPanel()
+        webtoonContainer.layout = BoxLayout(webtoonContainer, BoxLayout.Y_AXIS)
+        webtoonContainer.background = Color.BLACK
+        val webtoonScrollPane = JScrollPane(webtoonContainer)
+        webtoonScrollPane.border = null
+        webtoonScrollPane.verticalScrollBar.unitIncrement = 45
+        styleScrollBar(webtoonScrollPane)
+        centerCardPanel.add(webtoonScrollPane, "WEBTOON")
+
+        // Barra inferior estilo Aniyomi con Slider interactivo y botones
         val bottomBar = JPanel(BorderLayout(15, 8))
         bottomBar.background = Color(16, 17, 24)
         bottomBar.border = BorderFactory.createCompoundBorder(
@@ -1199,11 +1272,11 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         val prevBtn = createActionButton("◀ Anterior (A)", Theme.BG_INPUT)
         val nextBtn = createActionButton("Siguiente ▶ (D)", Theme.ACCENT_ROSE)
-        val webtoonBtn = createActionButton("📜 Cascada Webtoon (W)", Theme.ACCENT_PURPLE)
+        val webtoonToggleBtn = createActionButton("📜 Cascada Webtoon (W)", Theme.ACCENT_PURPLE)
 
         controlsRow.add(prevBtn)
         controlsRow.add(nextBtn)
-        controlsRow.add(webtoonBtn)
+        controlsRow.add(webtoonToggleBtn)
 
         bottomBar.add(pageSlider, BorderLayout.NORTH)
         bottomBar.add(controlsRow, BorderLayout.SOUTH)
@@ -1236,13 +1309,70 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                     withContext(Dispatchers.Swing) {
                         imageLabel.icon = ImageIcon(scaled)
                         imageLabel.text = ""
-                        scrollPane.verticalScrollBar.value = 0
+                        pageScrollPane.verticalScrollBar.value = 0
                     }
                 } else {
                     withContext(Dispatchers.Swing) {
-                        imageLabel.text = "Error al descargar página ${currentPageIndex + 1} de MangaDex"
+                        imageLabel.text = "Error al descargar página ${currentPageIndex + 1}"
                     }
                 }
+            }
+        }
+
+        var webtoonLoaded = false
+        fun toggleWebtoonMode() {
+            isWebtoonMode = !isWebtoonMode
+            if (isWebtoonMode) {
+                cardLayout.show(centerCardPanel, "WEBTOON")
+                webtoonToggleBtn.text = "📄 Modo Página (W)"
+                webtoonToggleBtn.background = Theme.ACCENT_CYAN
+                pageSlider.isVisible = false
+                prevBtn.isVisible = false
+                nextBtn.isVisible = false
+                pageStatus.text = "Modo Cascada Webtoon (${pages.size} páginas continuas)"
+
+                if (!webtoonLoaded) {
+                    webtoonLoaded = true
+                    for ((idx, page) in pages.withIndex()) {
+                        val pageLbl = JLabel("Cargando página ${idx + 1} de ${pages.size}...", SwingConstants.CENTER)
+                        pageLbl.alignmentX = Component.CENTER_ALIGNMENT
+                        pageLbl.foreground = Color.GRAY
+                        pageLbl.background = Color.BLACK
+                        pageLbl.isOpaque = true
+                        pageLbl.preferredSize = Dimension(900, 350)
+                        webtoonContainer.add(pageLbl)
+
+                        scope.launch(Dispatchers.IO) {
+                            val img = fetchImageFromNetwork(page.imageUrl)
+                            if (img != null) {
+                                val targetWidth = 900
+                                val scaledHeight = (img.getHeight(null) * (targetWidth.toDouble() / img.getWidth(null))).toInt()
+                                val scaled = img.getScaledInstance(targetWidth, scaledHeight, Image.SCALE_SMOOTH)
+                                withContext(Dispatchers.Swing) {
+                                    pageLbl.preferredSize = null
+                                    pageLbl.icon = ImageIcon(scaled)
+                                    pageLbl.text = ""
+                                    pageLbl.revalidate()
+                                    pageLbl.repaint()
+                                }
+                            } else {
+                                withContext(Dispatchers.Swing) {
+                                    pageLbl.text = "Error cargando página ${idx + 1}"
+                                }
+                            }
+                        }
+                    }
+                    webtoonContainer.revalidate()
+                    webtoonContainer.repaint()
+                }
+            } else {
+                cardLayout.show(centerCardPanel, "PAGE")
+                webtoonToggleBtn.text = "📜 Cascada Webtoon (W)"
+                webtoonToggleBtn.background = Theme.ACCENT_PURPLE
+                pageSlider.isVisible = true
+                prevBtn.isVisible = true
+                nextBtn.isVisible = true
+                showPage(currentPageIndex)
             }
         }
 
@@ -1254,71 +1384,23 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         prevBtn.addActionListener { if (currentPageIndex > 0) showPage(currentPageIndex - 1) }
         nextBtn.addActionListener { if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }
-        webtoonBtn.addActionListener { openWebtoonScrollReader(media.title, chapter.name, pages) }
+        webtoonToggleBtn.addActionListener { toggleWebtoonMode() }
 
         // Atajos de teclado estilo Aniyomi Desktop
-        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex > 0) showPage(currentPageIndex - 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_LEFT, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
-        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex > 0) showPage(currentPageIndex - 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_A, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
-        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
-        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_D, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
-        readerDialog.rootPane.registerKeyboardAction({ if (currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SPACE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
-        readerDialog.rootPane.registerKeyboardAction({ openWebtoonScrollReader(media.title, chapter.name, pages) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_W, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (!isWebtoonMode && currentPageIndex > 0) showPage(currentPageIndex - 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_LEFT, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (!isWebtoonMode && currentPageIndex > 0) showPage(currentPageIndex - 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_A, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (!isWebtoonMode && currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (!isWebtoonMode && currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_D, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ if (!isWebtoonMode && currentPageIndex < pages.size - 1) showPage(currentPageIndex + 1) }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SPACE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
+        readerDialog.rootPane.registerKeyboardAction({ toggleWebtoonMode() }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_W, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
         readerDialog.rootPane.registerKeyboardAction({ readerDialog.dispose() }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
 
         readerDialog.contentPane.add(topBar, BorderLayout.NORTH)
-        readerDialog.contentPane.add(scrollPane, BorderLayout.CENTER)
+        readerDialog.contentPane.add(centerCardPanel, BorderLayout.CENTER)
         readerDialog.contentPane.add(bottomBar, BorderLayout.SOUTH)
 
         showPage(0)
         readerDialog.isVisible = true
-    }
-
-    private fun openWebtoonScrollReader(title: String, chapterName: String, pages: List<MangaPage>) {
-        val webtoonDialog = JDialog(this, "Modo Cascada Webtoon - $title", true)
-        webtoonDialog.setSize(980, 960)
-        webtoonDialog.setLocationRelativeTo(this)
-        webtoonDialog.contentPane.background = Color.BLACK
-
-        val pagesContainer = JPanel()
-        pagesContainer.layout = BoxLayout(pagesContainer, BoxLayout.Y_AXIS)
-        pagesContainer.background = Color.BLACK
-
-        for ((idx, page) in pages.withIndex()) {
-            val pageLbl = JLabel("Cargando página ${idx + 1} de MangaDex...", SwingConstants.CENTER)
-            pageLbl.alignmentX = Component.CENTER_ALIGNMENT
-            pageLbl.foreground = Color.GRAY
-            pageLbl.background = Color.BLACK
-            pageLbl.isOpaque = true
-            pagesContainer.add(pageLbl)
-
-            scope.launch(Dispatchers.IO) {
-                val img = fetchImageFromNetwork(page.imageUrl)
-                if (img != null) {
-                    val targetWidth = 880
-                    val scaledHeight = (img.getHeight(null) * (targetWidth.toDouble() / img.getWidth(null))).toInt()
-                    val scaled = img.getScaledInstance(targetWidth, scaledHeight, Image.SCALE_SMOOTH)
-                    withContext(Dispatchers.Swing) {
-                        pageLbl.icon = ImageIcon(scaled)
-                        pageLbl.text = ""
-                        pageLbl.revalidate()
-                        pageLbl.repaint()
-                    }
-                } else {
-                    withContext(Dispatchers.Swing) {
-                        pageLbl.text = "Error cargando página ${idx + 1}"
-                    }
-                }
-            }
-        }
-
-        val scroll = JScrollPane(pagesContainer)
-        scroll.border = null
-        scroll.verticalScrollBar.unitIncrement = 40
-        styleScrollBar(scroll)
-
-        webtoonDialog.rootPane.registerKeyboardAction({ webtoonDialog.dispose() }, KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW)
-        webtoonDialog.contentPane.add(scroll)
-        webtoonDialog.isVisible = true
     }
 
     // ==========================================

@@ -47,9 +47,13 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.aniyomi.cross.model.*
 import com.aniyomi.cross.repository.ExtensionRepositoryManager
+import androidx.compose.foundation.BorderStroke
 import com.aniyomi.cross.scrapers.AniListAnimeSource
 import com.aniyomi.cross.scrapers.MangaDexDirectSource
+import com.aniyomi.cross.scrapers.UnifiedSpanishMangaSource
 import com.aniyomi.cross.scrapers.CrossSource
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 enum class ScreenTab {
@@ -69,7 +73,8 @@ fun AniyomiCrossApp() {
     val offlineStorage = remember { OfflineStorageManager(File(context.getExternalFilesDir(null) ?: context.filesDir, "AniyomiCrossDownloads")) }
 
     val animeSource = remember { AniListAnimeSource() }
-    val mangaSource = remember { MangaDexDirectSource() }
+    val mangaSource = remember { UnifiedSpanishMangaSource() }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var currentTab by remember { mutableStateOf(ScreenTab.ANIME) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
@@ -83,14 +88,72 @@ fun AniyomiCrossApp() {
     var updateProgress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
-        val info = AppUpdateManager.checkLatestRelease()
+        val info = AppUpdateManager.checkLatestRelease(forceManualCheck = false)
         if (info.hasUpdate) {
             updateInfo = info
+        }
+        // Sondeo continuo de actualizaciones en segundo plano
+        while (isActive) {
+            delay(60_000)
+            val periodic = AppUpdateManager.checkLatestRelease(forceManualCheck = false)
+            if (periodic.hasUpdate) {
+                updateInfo = periodic
+                break
+            }
         }
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            if (playingVideo == null && readingChapter == null) {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("ANIYOMI", fontWeight = FontWeight.Black, color = Color.White, fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("CROSS", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text(
+                                    text = " v${AppUpdateManager.CURRENT_VERSION} ",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val info = AppUpdateManager.checkLatestRelease(forceManualCheck = true)
+                                    if (info.hasUpdate) {
+                                        updateInfo = info
+                                    } else {
+                                        snackbarHostState.showSnackbar("¡Estás al día! Versión instalada: v${AppUpdateManager.CURRENT_VERSION}")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Buscar Actualizaciones",
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                )
+            }
+        },
         bottomBar = {
             if (playingVideo == null && readingChapter == null) {
                 NavigationBar(
@@ -254,7 +317,16 @@ fun AniyomiCrossApp() {
                         }
                     },
                     title = {
-                        Text("¡Nueva Versión Disponible (v${updateInfo?.latestVersion})!", color = Color.White, fontWeight = FontWeight.Bold)
+                        Column {
+                            Text("¡Nueva Versión Disponible!", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Versión instalada: v${updateInfo?.currentVersion ?: AppUpdateManager.CURRENT_VERSION} ➔ Nueva: v${updateInfo?.latestVersion}",
+                                color = MaterialTheme.colorScheme.tertiary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     },
                     text = {
                         Column {
@@ -484,8 +556,34 @@ fun MediaCatalogView(
                         }
                     }
 
-                    // 2. Si es Manga: Tipo de Cómic y Modo
+                    // 2. Si es Manga: Biblioteca en Español, Tipo de Cómic y Modo
                     if (isManga) {
+                        var currentSourceKey by remember { mutableStateOf("zonatmo") }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Biblioteca en Español:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "zonatmo" to "📚 ZonaTMO",
+                                "mangadex" to "⚡ MangaDex",
+                                "webtoons_es" to "📱 LINE Webtoon"
+                            ).forEach { (sKey, sLabel) ->
+                                FilterChip(
+                                    selected = currentSourceKey == sKey,
+                                    onClick = {
+                                        currentSourceKey = sKey
+                                        (source as? UnifiedSpanishMangaSource)?.activeSourceKey = sKey
+                                        applyFilter(1)
+                                    },
+                                    label = { Text(sLabel, fontSize = 11.sp) },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("Tipo de Cómic:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))

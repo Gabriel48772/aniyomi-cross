@@ -696,7 +696,7 @@ class MangaDexDirectSource : CrossSource {
     override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = withContext(Dispatchers.IO) {
         val pages = mutableListOf<MangaPage>()
         try {
-            if (!chapter.id.startsWith("fallback_")) {
+            if (!chapter.id.startsWith("fallback_") && !chapter.id.startsWith("no_es_")) {
                 val serverUrl = "$baseUrl/at-home/server/${chapter.id}"
                 val serverRes = NetworkClient.get(serverUrl)
                 val serverJson = JSONObject(serverRes)
@@ -724,6 +724,283 @@ class MangaDexDirectSource : CrossSource {
 }
 
 /**
- * Alias de compatibilidad hacia atrás
+ * Catálogo Principal de ZonaTMO / TuMangaOnline (100% en Español)
+ * Extracción de Biblioteca Completa de Manhwa, Manga, Manhua y Webtoons
  */
-typealias AniListMangaSource = MangaDexDirectSource
+class ZonaTMOSource : CrossSource {
+    override val id = "zonatmo"
+    override val name = "ZonaTMO (TuMangaOnline)"
+    override val lang = "es"
+    override val type = ContentType.MANGA
+    override val baseUrl = "https://zonatmo.org"
+
+    override suspend fun getPopular(page: Int): List<MediaItem> = filter(page = page)
+
+    override suspend fun search(query: String, page: Int): List<MediaItem> = filter(query = query, page = page)
+
+    override suspend fun filter(
+        query: String,
+        genre: String?,
+        sort: String,
+        country: String?,
+        status: String?,
+        page: Int
+    ): List<MediaItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<MediaItem>()
+        try {
+            val encodedQ = URLEncoder.encode(query.trim(), "UTF-8")
+            val url = if (query.trim().isNotEmpty()) {
+                "$baseUrl/biblioteca?title=$encodedQ&page=$page"
+            } else {
+                "$baseUrl/biblioteca?page=$page"
+            }
+            val html = NetworkClient.get(url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val pattern = Regex("""(?s)<div class="element[^"]*"[^>]*data-identifier="(\d+)"[^>]*>.*?<a href="(https://zonatmo\.org/library/[^"]+)".*?data-bg="([^"]+)".*?<h4[^>]*class="text-truncate"[^>]*title="([^"]+)"""")
+            val matches = pattern.findAll(html).toList()
+
+            for (m in matches) {
+                val mangaId = m.groupValues[1]
+                val mangaUrl = m.groupValues[2]
+                val cover = m.groupValues[3]
+                val title = m.groupValues[4].trim()
+
+                val typeTag = when {
+                    mangaUrl.contains("/manhwa/") -> "[Manhwa]"
+                    mangaUrl.contains("/manhua/") -> "[Manhua]"
+                    else -> "[Manga]"
+                }
+
+                list.add(
+                    MediaItem(
+                        id = "tmo_$mangaId",
+                        title = "$typeTag $title",
+                        url = mangaUrl,
+                        coverUrl = cover,
+                        type = ContentType.MANGA,
+                        description = "Disponible en ZonaTMO en Español.",
+                        genres = listOf("Español", "ZonaTMO"),
+                        status = "✅ Disponible • Español",
+                        sourceName = "ZonaTMO"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
+    override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> = withContext(Dispatchers.IO) {
+        val chapters = mutableListOf<EpisodeOrChapter>()
+        try {
+            val html = NetworkClient.get(media.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val uploadRegex = Regex("""href="(https://zonatmo\.org/view_uploads/(\d+))"""")
+            val matches = uploadRegex.findAll(html).toList().distinctBy { it.groupValues[1] }
+
+            for ((idx, m) in matches.withIndex()) {
+                val viewUrl = m.groupValues[1]
+                val uploadId = m.groupValues[2]
+                val chNumber = (matches.size - idx).toFloat()
+                chapters.add(
+                    EpisodeOrChapter(
+                        id = "tmo_ch_$uploadId",
+                        name = "Capítulo $chNumber - Sub Español",
+                        number = chNumber,
+                        url = viewUrl,
+                        uploadDate = "ZonaTMO"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Pair(media, chapters)
+    }
+
+    override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = withContext(Dispatchers.IO) {
+        val pages = mutableListOf<MangaPage>()
+        try {
+            val html = NetworkClient.get(chapter.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val pageRegex = Regex("""https://storage\d*\.zonatmo\.org/chapters/[^'"\s>]+\.(?:webp|jpg|png|jpeg)""")
+            val matches = pageRegex.findAll(html).map { it.value }.distinct().toList()
+
+            for ((idx, pUrl) in matches.withIndex()) {
+                pages.add(
+                    MangaPage(
+                        index = idx + 1,
+                        imageUrl = pUrl
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        pages
+    }
+}
+
+/**
+ * Catálogo de LINE Webtoon Oficial (100% en Español)
+ */
+class WebtoonEsSource : CrossSource {
+    override val id = "webtoons-es"
+    override val name = "LINE Webtoon Oficial (Español)"
+    override val lang = "es"
+    override val type = ContentType.MANGA
+    override val baseUrl = "https://www.webtoons.com/es"
+
+    override suspend fun getPopular(page: Int): List<MediaItem> = filter(page = page)
+
+    override suspend fun search(query: String, page: Int): List<MediaItem> = filter(query = query, page = page)
+
+    override suspend fun filter(
+        query: String,
+        genre: String?,
+        sort: String,
+        country: String?,
+        status: String?,
+        page: Int
+    ): List<MediaItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<MediaItem>()
+        try {
+            val url = if (query.trim().isNotEmpty()) {
+                "$baseUrl/search?keyword=${URLEncoder.encode(query.trim(), "UTF-8")}"
+            } else {
+                "$baseUrl/ranking/trending"
+            }
+            val html = NetworkClient.get(url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val pattern = Regex("""(?s)<a href="https://www\.webtoons\.com/es/([^"]+title_no=(\d+))"[^>]*>.*?<img[^>]*src="([^"]+)".*?<p class="subj">([^<]+)</p>""")
+            val matches = pattern.findAll(html).toList()
+
+            for (m in matches) {
+                val path = m.groupValues[1]
+                val titleNo = m.groupValues[2]
+                val cover = m.groupValues[3]
+                val title = m.groupValues[4].trim()
+
+                list.add(
+                    MediaItem(
+                        id = "wt_$titleNo",
+                        title = "[Webtoon] $title",
+                        url = "https://www.webtoons.com/es/$path",
+                        coverUrl = cover,
+                        type = ContentType.MANGA,
+                        description = "Webtoon Oficial en Español.",
+                        genres = listOf("Webtoon", "Español"),
+                        status = "✅ Oficial • Español",
+                        sourceName = "LINE Webtoon ES"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
+    override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> = withContext(Dispatchers.IO) {
+        val chapters = mutableListOf<EpisodeOrChapter>()
+        try {
+            val html = NetworkClient.get(media.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val epPattern = Regex("""(?s)<li[^>]*data-episode-no="(\d+)"[^>]*>.*?<a href="([^"]+)".*?<span class="subj"><span>([^<]+)</span>""")
+            val matches = epPattern.findAll(html).toList()
+
+            for (m in matches) {
+                val epNo = m.groupValues[1].toIntOrNull() ?: 1
+                val link = m.groupValues[2]
+                val epTitle = m.groupValues[3].trim()
+
+                chapters.add(
+                    EpisodeOrChapter(
+                        id = "wt_ep_${media.id}_$epNo",
+                        name = "Capítulo $epNo: $epTitle",
+                        number = epNo.toFloat(),
+                        url = link,
+                        uploadDate = "Oficial"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Pair(media, chapters)
+    }
+
+    override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = withContext(Dispatchers.IO) {
+        val pages = mutableListOf<MangaPage>()
+        try {
+            val html = NetworkClient.get(chapter.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val pageRegex = Regex("""data-url="([^"]+)"""")
+            val matches = pageRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
+
+            for ((idx, pUrl) in matches.withIndex()) {
+                pages.add(
+                    MangaPage(
+                        index = idx + 1,
+                        imageUrl = pUrl
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        pages
+    }
+}
+
+/**
+ * Gestor Multi-Biblioteca de Cómics 100% en Español
+ * Unifica ZonaTMO, LINE Webtoon Oficial y MangaDex Español
+ */
+class UnifiedSpanishMangaSource : CrossSource {
+    override val id = "spanish-manga-unified"
+    override val name = "Biblioteca Manga & Webtoon (Español)"
+    override val lang = "es"
+    override val type = ContentType.MANGA
+    override val baseUrl = "https://zonatmo.org"
+
+    val tmoSource = ZonaTMOSource()
+    val mdSource = MangaDexDirectSource()
+    val wtSource = WebtoonEsSource()
+
+    var activeSourceKey = "zonatmo"
+
+    fun getActive(): CrossSource = when (activeSourceKey) {
+        "mangadex" -> mdSource
+        "webtoons", "webtoons_es" -> wtSource
+        else -> tmoSource
+    }
+
+    suspend fun getRealtimeUpdates(page: Int = 1): List<MediaItem> = mdSource.getRealtimeUpdates(page)
+
+    override suspend fun getPopular(page: Int): List<MediaItem> = getActive().getPopular(page)
+
+    override suspend fun search(query: String, page: Int): List<MediaItem> = getActive().search(query, page)
+
+    override suspend fun filter(
+        query: String,
+        genre: String?,
+        sort: String,
+        country: String?,
+        status: String?,
+        page: Int
+    ): List<MediaItem> = getActive().filter(query, genre, sort, country, status, page)
+
+    override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> {
+        return when {
+            media.url.contains("zonatmo.org") -> tmoSource.getDetails(media)
+            media.url.contains("webtoons.com") -> wtSource.getDetails(media)
+            else -> mdSource.getDetails(media)
+        }
+    }
+
+    override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> {
+        return when {
+            chapter.url.contains("zonatmo.org") || chapter.url.contains("view_uploads") -> tmoSource.getPageList(chapter)
+            chapter.url.contains("webtoons.com") -> wtSource.getPageList(chapter)
+            else -> mdSource.getPageList(chapter)
+        }
+    }
+}
+
+typealias AniListMangaSource = UnifiedSpanishMangaSource

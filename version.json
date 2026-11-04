@@ -1,7 +1,7 @@
 {
-  "version": "1.2.2",
-  "versionCode": 5,
+  "version": "1.3.0",
+  "versionCode": 6,
   "apkUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk",
   "jarUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar",
-  "releaseNotes": "Versión 1.2.2: Catálogo y capítulos de cómics 100% EXCLUSIVOS en Español (sin inglés), integración del motor multi-sitio de anime (JKanime, MonosChinos y AnimeFLV con streams FHD/HD) y reproductor web híbrido."
+  "releaseNotes": "Versión 1.3.0: Lector webtoon integrado directamente en la misma hoja sin pestañas extra, integración de bibliotecas oficiales en Español (ZonaTMO, MangaDex y LINE Webtoon), botón con ícono para comprobación manual de actualizaciones en tiempo real y rediseño de interfaz moderna con selector de biblioteca y comparación de versiones."
 }

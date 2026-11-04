@@ -10,7 +10,7 @@ object AppUpdateManager {
 
     var githubRepoOwner = "Gabriel48772"
     var githubRepoName = "aniyomi-cross"
-    const val CURRENT_VERSION = "1.2.2"
+    const val CURRENT_VERSION = "1.3.0"
 
     private var dismissedVersion: String? = null
 
@@ -48,40 +48,42 @@ object AppUpdateManager {
 
     data class UpdateInfo(
         val hasUpdate: Boolean,
+        val currentVersion: String,
         val latestVersion: String,
         val apkDownloadUrl: String?,
         val jarDownloadUrl: String?,
         val releaseNotes: String
     )
 
-    suspend fun checkLatestRelease(): UpdateInfo = withContext(Dispatchers.IO) {
+    suspend fun checkLatestRelease(forceManualCheck: Boolean = false): UpdateInfo = withContext(Dispatchers.IO) {
         val installedVer = getInstalledVersion()
-        // 1. Intentar mediante version.json directo de GitHub
+        // 1. Intentar mediante version.json directo de GitHub (respuesta en milisegundos con cada commit)
         try {
-            val rawVersionUrl = "https://raw.githubusercontent.com/$githubRepoOwner/$githubRepoName/main/version.json"
+            val rawVersionUrl = "https://raw.githubusercontent.com/$githubRepoOwner/$githubRepoName/main/version.json?t=${System.currentTimeMillis()}"
             val jsonStr = NetworkClient.get(rawVersionUrl)
             val root = JSONObject(jsonStr)
             val ver = root.optString("version", installedVer)
             val apk = root.optString("apkUrl", "")
             val jar = root.optString("jarUrl", "")
-            val notes = root.optString("releaseNotes", "Mejoras y correcciones generales.")
+            val notes = root.optString("releaseNotes", "Mejoras de rendimiento y nuevas características.")
 
             val isNewer = isVersionNewer(ver, installedVer)
-            val isDismissed = (dismissedVersion != null && dismissedVersion == ver)
+            val isDismissed = (!forceManualCheck && dismissedVersion != null && dismissedVersion == ver)
 
             if (isNewer && !isDismissed) {
                 return@withContext UpdateInfo(
                     hasUpdate = true,
+                    currentVersion = installedVer,
                     latestVersion = ver,
                     apkDownloadUrl = apk.ifEmpty { null },
                     jarDownloadUrl = jar.ifEmpty { null },
                     releaseNotes = notes
                 )
             } else {
-                return@withContext UpdateInfo(false, installedVer, null, null, "")
+                return@withContext UpdateInfo(false, installedVer, ver, null, null, "")
             }
         } catch (e: Exception) {
-            // Intentar fallback
+            // Continuar con fallback
         }
 
         // 2. Fallback: Releases API de GitHub
@@ -111,17 +113,18 @@ object AppUpdateManager {
             }
 
             val isNewer = isVersionNewer(tagName, installedVer)
-            val isDismissed = (dismissedVersion != null && dismissedVersion == tagName)
+            val isDismissed = (!forceManualCheck && dismissedVersion != null && dismissedVersion == tagName)
 
             UpdateInfo(
                 hasUpdate = isNewer && !isDismissed,
+                currentVersion = installedVer,
                 latestVersion = tagName,
                 apkDownloadUrl = apkUrl,
                 jarDownloadUrl = jarUrl,
                 releaseNotes = body
             )
         } catch (e: Exception) {
-            UpdateInfo(false, installedVer, null, null, "")
+            UpdateInfo(false, installedVer, installedVer, null, null, "")
         }
     }
 
