@@ -949,8 +949,397 @@ class WebtoonEsSource : CrossSource {
 }
 
 /**
+ * Catálogo de LectorMangas (https://lector-mangas.lat/)
+ * Biblioteca completa en español de Manga, Manhwa, Manhua y Novelas.
+ */
+class LectorMangasSource : CrossSource {
+    override val id = "lectormangas"
+    override val name = "LectorMangas (Español)"
+    override val lang = "es"
+    override val type = ContentType.MANGA
+    override val baseUrl = "https://lector-mangas.lat"
+
+    override suspend fun getPopular(page: Int): List<MediaItem> = filter(page = page)
+
+    override suspend fun search(query: String, page: Int): List<MediaItem> = filter(query = query, page = page)
+
+    override suspend fun filter(
+        query: String,
+        genre: String?,
+        sort: String,
+        country: String?,
+        status: String?,
+        page: Int
+    ): List<MediaItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<MediaItem>()
+        try {
+            val url = if (query.trim().isNotEmpty()) {
+                "$baseUrl/comics?q=${URLEncoder.encode(query.trim(), "UTF-8")}&page=$page"
+            } else {
+                if (page <= 1) "$baseUrl/" else "$baseUrl/comics?page=$page"
+            }
+            val html = NetworkClient.get(url, mapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer" to "$baseUrl/"
+            ))
+
+            // Patrón para capturar tarjetas de series y JSON-LD de series destacadas
+            val cardRegex = Regex("""(?s)href="https://lector-mangas\.lat/comics/([^"/]+)"[^>]*name="([^"]+)"""")
+            val imgRegex = Regex("""(?s)href="https://lector-mangas\.lat/comics/([^"/]+)".*?<img[^>]*src="([^"]+)".*?class="[^"]*title[^"]*">([^<]+)<""")
+            val genericRegex = Regex("""href="/comics/([^"/]+)".*?alt="([^"]+)"""")
+
+            val matched = cardRegex.findAll(html).toList()
+            if (matched.isNotEmpty()) {
+                for (m in matched) {
+                    val slug = m.groupValues[1]
+                    val title = m.groupValues[2].trim()
+                    list.add(
+                        MediaItem(
+                            id = "lm_$slug",
+                            title = "[LectorManga] $title",
+                            url = "$baseUrl/comics/$slug",
+                            coverUrl = "https://api.zerocomics.net/storage/series/portadas/default.webp",
+                            type = ContentType.MANGA,
+                            description = "Disponible en Lector manga en Español.",
+                            genres = listOf("Español", "LectorManga"),
+                            status = "✅ Disponible • Español",
+                            sourceName = "LectorMangas"
+                        )
+                    )
+                }
+            }
+
+            // Parseo secundario para extraer imágenes precisas
+            val detailRegex = Regex("""href="https://lector-mangas\.lat/comics/([^"/]+)"\s+name="([^"]+)"""")
+            val portadas = Regex("""https://api\.zerocomics\.net/storage/series/portadas/[^"'\s>]+\.(?:webp|jpg|png)""").findAll(html).map { it.value }.toList()
+            for ((idx, m) in detailRegex.findAll(html).withIndex()) {
+                val slug = m.groupValues[1]
+                val title = m.groupValues[2].trim()
+                val cover = portadas.getOrNull(idx) ?: "https://api.zerocomics.net/storage/series/portadas/default.webp"
+                if (list.none { it.id == "lm_$slug" }) {
+                    list.add(
+                        MediaItem(
+                            id = "lm_$slug",
+                            title = "[LectorManga] $title",
+                            url = "$baseUrl/comics/$slug",
+                            coverUrl = cover,
+                            type = ContentType.MANGA,
+                            description = "Disponible en Lector manga en Español.",
+                            genres = listOf("Español", "LectorManga"),
+                            status = "✅ Disponible • Español",
+                            sourceName = "LectorMangas"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
+    override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> = withContext(Dispatchers.IO) {
+        val chapters = mutableListOf<EpisodeOrChapter>()
+        var resolvedMedia = media
+        try {
+            val html = NetworkClient.get(media.url, mapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer" to "$baseUrl/"
+            ))
+
+            // Extraer portada de alta resolución
+            val coverMatch = Regex("""const serie_portada\s*=\s*"([^"]+)"""").find(html)
+                ?: Regex("""property="og:image"\s+content="([^"]+)"""").find(html)
+            if (coverMatch != null) {
+                resolvedMedia = resolvedMedia.copy(coverUrl = coverMatch.groupValues[1])
+            }
+
+            // Extraer capítulos: /comics/{slug}/chapter-{n} o capitulo-{n}
+            val chRegex = Regex("""href="(/comics/[^"/]+/(?:chapter|capitulo)-(\d+))"[^>]*>.*?Capítulo\s+(\d+)""")
+            val chMatches = chRegex.findAll(html).toList().distinctBy { it.groupValues[1] }
+
+            if (chMatches.isNotEmpty()) {
+                for (m in chMatches) {
+                    val path = m.groupValues[1]
+                    val num = m.groupValues[2].toFloatOrNull() ?: 1f
+                    chapters.add(
+                        EpisodeOrChapter(
+                            id = "lm_ch_${media.id}_$num",
+                            name = "Capítulo $num - Español",
+                            number = num,
+                            url = if (path.startsWith("http")) path else "$baseUrl$path",
+                            uploadDate = "LectorMangas"
+                        )
+                    )
+                }
+            } else {
+                // Fallback de enlaces de capítulos estándar
+                val fallbackRegex = Regex("""href="(/comics/[^"/]+/(?:chapter|capitulo)-[^"]+)"""")
+                val fallbackMatches = fallbackRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
+                for ((idx, path) in fallbackMatches.withIndex()) {
+                    val num = (fallbackMatches.size - idx).toFloat()
+                    chapters.add(
+                        EpisodeOrChapter(
+                            id = "lm_ch_${media.id}_$idx",
+                            name = "Capítulo $num - Español",
+                            number = num,
+                            url = if (path.startsWith("http")) path else "$baseUrl$path",
+                            uploadDate = "LectorMangas"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Pair(resolvedMedia, chapters)
+    }
+
+    override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = withContext(Dispatchers.IO) {
+        val pages = mutableListOf<MangaPage>()
+        try {
+            val html = NetworkClient.get(chapter.url, mapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer" to "$baseUrl/"
+            ))
+            val imgRegex = Regex("""https://api\.zerocomics\.net/storage/chapters/[^"'\s>]+\.(?:webp|jpg|png|jpeg)""")
+            val allImgRegex = Regex("""https://[^\s"'<>]+\.(?:webp|jpg|png|jpeg)""")
+
+            var matches = imgRegex.findAll(html).map { it.value }.distinct().toList()
+            if (matches.isEmpty()) {
+                matches = allImgRegex.findAll(html).map { it.value }.filter {
+                    it.contains("chapter") || it.contains("storage") || it.contains("zerocomics")
+                }.distinct().toList()
+            }
+
+            for ((idx, url) in matches.withIndex()) {
+                pages.add(
+                    MangaPage(
+                        index = idx + 1,
+                        imageUrl = url
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        pages
+    }
+}
+
+/**
+ * Catálogo de LectorXD (https://lectorxd.com/)
+ * Manhwas y Manhuas en Español
+ */
+class LectorXdSource : CrossSource {
+    override val id = "lectorxd"
+    override val name = "LectorXD (Manhwa y Manhua)"
+    override val lang = "es"
+    override val type = ContentType.MANGA
+    override val baseUrl = "https://lectorxd.com"
+
+    override suspend fun getPopular(page: Int): List<MediaItem> = filter(page = page)
+
+    override suspend fun search(query: String, page: Int): List<MediaItem> = filter(query = query, page = page)
+
+    override suspend fun filter(
+        query: String,
+        genre: String?,
+        sort: String,
+        country: String?,
+        status: String?,
+        page: Int
+    ): List<MediaItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<MediaItem>()
+        try {
+            val url = if (query.trim().isNotEmpty()) {
+                "$baseUrl/catalogo?q=${URLEncoder.encode(query.trim(), "UTF-8")}&page=$page"
+            } else {
+                "$baseUrl/"
+            }
+            val html = NetworkClient.get(url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val pattern = Regex("""(?s)<a href="/(manhwa|manhua|manga)/([^"]+)"[^>]*>.*?<img[^>]*src="([^"]+)".*?title="([^"]+)"""")
+            val matches = pattern.findAll(html).toList()
+
+            for (m in matches) {
+                val kind = m.groupValues[1]
+                val slug = m.groupValues[2]
+                val cover = m.groupValues[3]
+                val title = m.groupValues[4].trim()
+
+                list.add(
+                    MediaItem(
+                        id = "lxd_$slug",
+                        title = "[${kind.replaceFirstChar { it.uppercase() }}] $title",
+                        url = "$baseUrl/$kind/$slug",
+                        coverUrl = cover,
+                        type = ContentType.MANGA,
+                        description = "Disponible en LectorXD en Español.",
+                        genres = listOf("Español", "LectorXD"),
+                        status = "✅ Disponible • Español",
+                        sourceName = "LectorXD"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
+    override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> = withContext(Dispatchers.IO) {
+        val chapters = mutableListOf<EpisodeOrChapter>()
+        try {
+            val html = NetworkClient.get(media.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val chRegex = Regex("""href="(/[^"/]+/[^"/]+/leer/(\d+))"[^>]*title="[^"]*Capítulo\s+(\d+)"""")
+            val matches = chRegex.findAll(html).toList().distinctBy { it.groupValues[1] }
+
+            for (m in matches) {
+                val path = m.groupValues[1]
+                val num = m.groupValues[2].toFloatOrNull() ?: 1f
+                chapters.add(
+                    EpisodeOrChapter(
+                        id = "lxd_ch_${media.id}_$num",
+                        name = "Capítulo $num - Español",
+                        number = num,
+                        url = "$baseUrl$path",
+                        uploadDate = "LectorXD"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Pair(media, chapters)
+    }
+
+    override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = withContext(Dispatchers.IO) {
+        val pages = mutableListOf<MangaPage>()
+        try {
+            val html = NetworkClient.get(chapter.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val imgRegex = Regex("""https://s\d*\.cdnlxd\.xyz/[^"'\s>]+\.(?:webp|jpg|png|jpeg)""")
+            val matches = imgRegex.findAll(html).map { it.value }.distinct().toList()
+
+            for ((idx, url) in matches.withIndex()) {
+                pages.add(
+                    MangaPage(
+                        index = idx + 1,
+                        imageUrl = url
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        pages
+    }
+}
+
+/**
+ * Catálogo de Olympus Scanlation (https://olympusbiblioteca.com/ / https://olympus.pages.dev/)
+ * Cómics en Español de alta calidad.
+ */
+class OlympusSource : CrossSource {
+    override val id = "olympus"
+    override val name = "Olympus Scanlation (Español)"
+    override val lang = "es"
+    override val type = ContentType.MANGA
+    override val baseUrl = "https://olympusbiblioteca.com"
+
+    override suspend fun getPopular(page: Int): List<MediaItem> = filter(page = page)
+
+    override suspend fun search(query: String, page: Int): List<MediaItem> = filter(query = query, page = page)
+
+    override suspend fun filter(
+        query: String,
+        genre: String?,
+        sort: String,
+        country: String?,
+        status: String?,
+        page: Int
+    ): List<MediaItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<MediaItem>()
+        try {
+            val html = NetworkClient.get(baseUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val pattern = Regex("""(?s)<a href="/series/([^"/]+)"[^>]*>.*?<img[^>]*src="([^"]+)".*?<h3[^>]*>([^<]+)</h3>""")
+            val matches = pattern.findAll(html).toList()
+
+            for (m in matches) {
+                val slug = m.groupValues[1]
+                val cover = m.groupValues[2]
+                val title = m.groupValues[3].trim()
+
+                list.add(
+                    MediaItem(
+                        id = "oly_$slug",
+                        title = "[Olympus] $title",
+                        url = "$baseUrl/series/$slug",
+                        coverUrl = cover,
+                        type = ContentType.MANGA,
+                        description = "Disponible en Olympus Scanlation en Español.",
+                        genres = listOf("Español", "Olympus"),
+                        status = "✅ Disponible • Español",
+                        sourceName = "Olympus Scanlation"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
+    override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> = withContext(Dispatchers.IO) {
+        val chapters = mutableListOf<EpisodeOrChapter>()
+        try {
+            val html = NetworkClient.get(media.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val chRegex = Regex("""href="(/capitulo/(\d+)/[^"]+)"[^>]*>.*?Capítulo\s+(\d+)""")
+            val matches = chRegex.findAll(html).toList().distinctBy { it.groupValues[1] }
+
+            for (m in matches) {
+                val path = m.groupValues[1]
+                val num = m.groupValues[2].toFloatOrNull() ?: 1f
+                chapters.add(
+                    EpisodeOrChapter(
+                        id = "oly_ch_${media.id}_$num",
+                        name = "Capítulo $num - Español",
+                        number = num,
+                        url = "$baseUrl$path",
+                        uploadDate = "Olympus"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Pair(media, chapters)
+    }
+
+    override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> = withContext(Dispatchers.IO) {
+        val pages = mutableListOf<MangaPage>()
+        try {
+            val html = NetworkClient.get(chapter.url, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val imgRegex = Regex("""https://up\.swordflake\.com/[^"'\s>]+\.(?:webp|jpg|png|jpeg)""")
+            val matches = imgRegex.findAll(html).map { it.value }.distinct().toList()
+
+            for ((idx, url) in matches.withIndex()) {
+                pages.add(
+                    MangaPage(
+                        index = idx + 1,
+                        imageUrl = url
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        pages
+    }
+}
+
+/**
  * Gestor Multi-Biblioteca de Cómics 100% en Español
- * Unifica ZonaTMO, LINE Webtoon Oficial y MangaDex Español
+ * Unifica ZonaTMO, LectorMangas, LINE Webtoon Oficial, LectorXD, Olympus y MangaDex Español
  */
 class UnifiedSpanishMangaSource : CrossSource {
     override val id = "spanish-manga-unified"
@@ -960,14 +1349,20 @@ class UnifiedSpanishMangaSource : CrossSource {
     override val baseUrl = "https://zonatmo.org"
 
     val tmoSource = ZonaTMOSource()
-    val mdSource = MangaDexDirectSource()
+    val lmSource = LectorMangasSource()
     val wtSource = WebtoonEsSource()
+    val lxdSource = LectorXdSource()
+    val olySource = OlympusSource()
+    val mdSource = MangaDexDirectSource()
 
     var activeSourceKey = "zonatmo"
 
     fun getActive(): CrossSource = when (activeSourceKey) {
-        "mangadex" -> mdSource
+        "lectormangas" -> lmSource
         "webtoons", "webtoons_es" -> wtSource
+        "lectorxd" -> lxdSource
+        "olympus" -> olySource
+        "mangadex" -> mdSource
         else -> tmoSource
     }
 
@@ -987,17 +1382,30 @@ class UnifiedSpanishMangaSource : CrossSource {
     ): List<MediaItem> = getActive().filter(query, genre, sort, country, status, page)
 
     override suspend fun getDetails(media: MediaItem): Pair<MediaItem, List<EpisodeOrChapter>> {
-        return when {
+        val pair = when {
             media.url.contains("zonatmo.org") -> tmoSource.getDetails(media)
+            media.url.contains("lector-mangas.lat") -> lmSource.getDetails(media)
             media.url.contains("webtoons.com") -> wtSource.getDetails(media)
+            media.url.contains("lectorxd.com") -> lxdSource.getDetails(media)
+            media.url.contains("olympus") -> olySource.getDetails(media)
             else -> mdSource.getDetails(media)
         }
+        // REGLA ESTRICTA: Filtrar y excluir capítulos que no sean de idioma español
+        val spanishChapters = pair.second.filter { ch ->
+            !ch.name.contains("English", ignoreCase = true) &&
+            !ch.name.contains("[EN]", ignoreCase = true) &&
+            !ch.name.contains("[RAW]", ignoreCase = true)
+        }
+        return Pair(pair.first, spanishChapters)
     }
 
     override suspend fun getPageList(chapter: EpisodeOrChapter): List<MangaPage> {
         return when {
             chapter.url.contains("zonatmo.org") || chapter.url.contains("view_uploads") -> tmoSource.getPageList(chapter)
+            chapter.url.contains("lector-mangas.lat") -> lmSource.getPageList(chapter)
             chapter.url.contains("webtoons.com") -> wtSource.getPageList(chapter)
+            chapter.url.contains("lectorxd.com") -> lxdSource.getPageList(chapter)
+            chapter.url.contains("olympus") -> olySource.getPageList(chapter)
             else -> mdSource.getPageList(chapter)
         }
     }

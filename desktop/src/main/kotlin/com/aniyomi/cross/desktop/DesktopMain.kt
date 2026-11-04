@@ -389,10 +389,13 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         val sourceOptions = arrayOf(
             "📚 ZonaTMO (TuMangaOnline)",
-            "⚡ MangaDex (Español)",
-            "📱 LINE Webtoon (Español)"
+            "📖 LectorMangas (Latinoamérica)",
+            "📱 LINE Webtoon (Oficial Español)",
+            "⚡ LectorXD (Manhwa y Manhua)",
+            "🏛️ Olympus Scanlation (Español)",
+            "🌐 MangaDex (Comunidad Español)"
         )
-        val sourceKeys = arrayOf("zonatmo", "mangadex", "webtoons_es")
+        val sourceKeys = arrayOf("zonatmo", "lectormangas", "webtoons_es", "lectorxd", "olympus", "mangadex")
         val sourceCombo = createStyledComboBox(sourceOptions)
 
         val searchField = createStyledTextField("Buscar manga, manhwa o manhua...")
@@ -970,71 +973,75 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         actionBtn.font = Font("Segoe UI", Font.BOLD, 14)
         actionBtn.margin = Insets(8, 22, 8, 22)
 
-        val downloadBtn = createActionButton("⬇ Descargar Offline", Theme.BG_INPUT)
+        val downloadBtn = createActionButton("⬇ Descargar Offline ▾", Theme.BG_INPUT)
         downloadBtn.margin = Insets(8, 16, 8, 16)
 
-        actionBtn.addActionListener {
+        // Menú desplegable para Descarga Masiva y Selección
+        val downloadMenu = JPopupMenu()
+        downloadMenu.background = Theme.BG_SURFACE
+        downloadMenu.border = RoundedBorder(Theme.BORDER_COLOR, 8, 1)
+
+        val itemSingle = JMenuItem("⬇ Descargar capítulo/episodio seleccionado").apply {
+            background = Theme.BG_SURFACE
+            foreground = Theme.TEXT_WHITE
+            font = Font("Segoe UI", Font.BOLD, 12)
+        }
+        val itemAll = JMenuItem("📦 Descargar TODOS los capítulos (Descarga masiva)").apply {
+            background = Theme.BG_SURFACE
+            foreground = Theme.ACCENT_ROSE
+            font = Font("Segoe UI", Font.BOLD, 12)
+        }
+        val itemSelect = JMenuItem("☑ Seleccionar múltiples capítulos para descarga masiva...").apply {
+            background = Theme.BG_SURFACE
+            foreground = Theme.ACCENT_CYAN
+            font = Font("Segoe UI", Font.BOLD, 12)
+        }
+
+        downloadMenu.add(itemSingle)
+        downloadMenu.add(itemAll)
+        downloadMenu.add(itemSelect)
+
+        itemSingle.addActionListener {
             val selected = jlist.selectedValue
             if (selected != null) {
-                scope.launch {
-                    if (isAnime) {
-                        val videos = animeSource.getVideoList(selected)
-                        if (videos.isNotEmpty()) {
-                            openAnimePlayer(item, selected, videos)
-                        } else {
-                            JOptionPane.showMessageDialog(dialog, "No se encontraron servidores disponibles.", "Aviso", JOptionPane.WARNING_MESSAGE)
-                        }
-                    } else {
-                        val pages = mangaSource.getPageList(selected)
-                        if (pages.isNotEmpty()) {
-                            openMangaReader(item, selected, pages)
-                        } else {
-                            JOptionPane.showMessageDialog(dialog, "No se pudieron obtener las páginas de este capítulo.", "Aviso", JOptionPane.WARNING_MESSAGE)
-                        }
-                    }
+                downloadChaptersInBatch(dialog, item, isAnime, listOf(selected), downloadBtn)
+            } else {
+                if (listModel.size() > 0) {
+                    downloadChaptersInBatch(dialog, item, isAnime, listOf(listModel.getElementAt(0)), downloadBtn)
+                } else {
+                    JOptionPane.showMessageDialog(dialog, "No hay capítulos disponibles para descargar.")
+                }
+            }
+        }
+
+        itemAll.addActionListener {
+            val allChapters = (0 until listModel.size()).map { listModel.getElementAt(it) }
+            if (allChapters.isNotEmpty()) {
+                val confirm = JOptionPane.showConfirmDialog(
+                    dialog,
+                    "¿Deseas descargar los ${allChapters.size} capítulos en lote para verlos sin internet?",
+                    "Confirmar Descarga Masiva",
+                    JOptionPane.YES_NO_OPTION
+                )
+                if (confirm == JOptionPane.YES_OPTION) {
+                    downloadChaptersInBatch(dialog, item, isAnime, allChapters, downloadBtn)
                 }
             } else {
-                JOptionPane.showMessageDialog(dialog, "Por favor selecciona un episodio o capítulo de la lista.")
+                JOptionPane.showMessageDialog(dialog, "No hay capítulos cargados para descargar.")
+            }
+        }
+
+        itemSelect.addActionListener {
+            val allChapters = (0 until listModel.size()).map { listModel.getElementAt(it) }
+            if (allChapters.isNotEmpty()) {
+                showBatchSelectionDialog(dialog, item, isAnime, allChapters, downloadBtn)
+            } else {
+                JOptionPane.showMessageDialog(dialog, "No hay capítulos disponibles para seleccionar.")
             }
         }
 
         downloadBtn.addActionListener {
-            val selected = jlist.selectedValue
-            if (selected != null) {
-                downloadBtn.isEnabled = false
-                downloadBtn.text = "⏳ Descargando..."
-                scope.launch(Dispatchers.IO) {
-                    if (isAnime) {
-                        val videos = animeSource.getVideoList(selected)
-                        if (videos.isNotEmpty()) {
-                            val file = offlineStorage.downloadAnimeEpisode(item, selected, videos.first().videoUrl) { }
-                            withContext(Dispatchers.Swing) {
-                                downloadBtn.isEnabled = true
-                                downloadBtn.text = "⬇ Descargar Offline"
-                                if (file != null) {
-                                    refreshOfflineDownloads()
-                                    JOptionPane.showMessageDialog(dialog, "¡Episodio guardado exitosamente en tu equipo!\nPuedes reproducirlo 100% offline en la pestaña 'Descargas'.", "Descarga Completa", JOptionPane.INFORMATION_MESSAGE)
-                                }
-                            }
-                        }
-                    } else {
-                        val pages = mangaSource.getPageList(selected)
-                        if (pages.isNotEmpty()) {
-                            val dir = offlineStorage.downloadMangaChapter(item, selected, pages) { }
-                            withContext(Dispatchers.Swing) {
-                                downloadBtn.isEnabled = true
-                                downloadBtn.text = "⬇ Descargar Offline"
-                                if (dir != null) {
-                                    refreshOfflineDownloads()
-                                    JOptionPane.showMessageDialog(dialog, "¡Capítulo guardado exitosamente en tu equipo!\nPuedes leerlo 100% offline en la pestaña 'Descargas'.", "Descarga Completa", JOptionPane.INFORMATION_MESSAGE)
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                JOptionPane.showMessageDialog(dialog, "Por favor selecciona un episodio o capítulo de la lista.")
-            }
+            downloadMenu.show(downloadBtn, 0, downloadBtn.height)
         }
 
         btnPanel.add(downloadBtn)
@@ -1055,6 +1062,134 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         }
 
         dialog.isVisible = true
+    }
+
+    private fun downloadChaptersInBatch(
+        parentComponent: Component,
+        media: MediaItem,
+        isAnime: Boolean,
+        targets: List<EpisodeOrChapter>,
+        downloadBtn: JButton
+    ) {
+        if (targets.isEmpty()) {
+            JOptionPane.showMessageDialog(parentComponent, "No hay capítulos seleccionados para descargar.")
+            return
+        }
+
+        downloadBtn.isEnabled = false
+        val total = targets.size
+
+        scope.launch(Dispatchers.IO) {
+            var downloadedCount = 0
+            for ((idx, ch) in targets.withIndex()) {
+                withContext(Dispatchers.Swing) {
+                    downloadBtn.text = "Descargando (${idx + 1}/$total)..."
+                }
+                try {
+                    if (isAnime) {
+                        val videos = animeSource.getVideoList(ch)
+                        if (videos.isNotEmpty()) {
+                            offlineStorage.downloadAnimeEpisode(media, ch, videos.first().videoUrl) { }
+                            downloadedCount++
+                        }
+                    } else {
+                        val pages = mangaSource.getPageList(ch)
+                        if (pages.isNotEmpty()) {
+                            offlineStorage.downloadMangaChapter(media, ch, pages) { }
+                            downloadedCount++
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            withContext(Dispatchers.Swing) {
+                downloadBtn.isEnabled = true
+                downloadBtn.text = "⬇ Descargar Offline ▾"
+                refreshOfflineDownloads()
+                JOptionPane.showMessageDialog(
+                    parentComponent,
+                    "¡Descarga masiva completada!\nSe guardaron con éxito $downloadedCount de $total capítulos para uso sin conexión.",
+                    "Descarga Masiva Completa",
+                    JOptionPane.INFORMATION_MESSAGE
+                )
+            }
+        }
+    }
+
+    private fun showBatchSelectionDialog(
+        parent: JDialog,
+        media: MediaItem,
+        isAnime: Boolean,
+        allChapters: List<EpisodeOrChapter>,
+        downloadBtn: JButton
+    ) {
+        val selDialog = JDialog(parent, "Selección múltiple para descarga masiva - ${media.title}", true)
+        selDialog.setSize(520, 560)
+        selDialog.setLocationRelativeTo(parent)
+        selDialog.contentPane.background = Theme.BG_SURFACE
+        selDialog.layout = BorderLayout(10, 10)
+
+        val topHeader = JPanel(BorderLayout(8, 8))
+        topHeader.isOpaque = false
+        topHeader.border = EmptyBorder(12, 16, 8, 16)
+        val headerLbl = JLabel("Selecciona los capítulos que deseas descargar:")
+        headerLbl.foreground = Color.WHITE
+        headerLbl.font = Font("Segoe UI", Font.BOLD, 13)
+
+        val selectButtonsRow = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0))
+        selectButtonsRow.isOpaque = false
+        val btnSelectAll = createActionButton("Todos", Theme.BG_INPUT)
+        val btnDeselectAll = createActionButton("Ninguno", Theme.BG_INPUT)
+        selectButtonsRow.add(btnSelectAll)
+        selectButtonsRow.add(btnDeselectAll)
+
+        topHeader.add(headerLbl, BorderLayout.WEST)
+        topHeader.add(selectButtonsRow, BorderLayout.EAST)
+
+        val checkListPanel = JPanel()
+        checkListPanel.layout = BoxLayout(checkListPanel, BoxLayout.Y_AXIS)
+        checkListPanel.background = Theme.BG_MAIN
+        checkListPanel.border = EmptyBorder(10, 16, 10, 16)
+
+        val checkBoxes = mutableListOf<Pair<JCheckBox, EpisodeOrChapter>>()
+        for (ch in allChapters) {
+            val cb = JCheckBox(ch.name, true)
+            cb.isOpaque = false
+            cb.foreground = Theme.TEXT_WHITE
+            cb.font = Font("Segoe UI", Font.PLAIN, 12)
+            checkBoxes.add(Pair(cb, ch))
+            checkListPanel.add(cb)
+            checkListPanel.add(Box.createVerticalStrut(4))
+        }
+
+        btnSelectAll.addActionListener { checkBoxes.forEach { it.first.isSelected = true } }
+        btnDeselectAll.addActionListener { checkBoxes.forEach { it.first.isSelected = false } }
+
+        val scroll = JScrollPane(checkListPanel)
+        scroll.border = BorderFactory.createMatteBorder(1, 0, 1, 0, Theme.BORDER_COLOR)
+        scroll.verticalScrollBar.unitIncrement = 25
+        styleScrollBar(scroll)
+
+        val bottomRow = JPanel(FlowLayout(FlowLayout.RIGHT, 12, 12))
+        bottomRow.isOpaque = false
+        val cancelBtn = createActionButton("Cancelar", Theme.BG_INPUT)
+        val startDownloadBtn = createActionButton("⬇ Descargar Seleccionados", Theme.ACCENT_ROSE)
+
+        cancelBtn.addActionListener { selDialog.dispose() }
+        startDownloadBtn.addActionListener {
+            val selected = checkBoxes.filter { it.first.isSelected }.map { it.second }
+            selDialog.dispose()
+            downloadChaptersInBatch(parent, media, isAnime, selected, downloadBtn)
+        }
+
+        bottomRow.add(cancelBtn)
+        bottomRow.add(startDownloadBtn)
+
+        selDialog.contentPane.add(topHeader, BorderLayout.NORTH)
+        selDialog.contentPane.add(scroll, BorderLayout.CENTER)
+        selDialog.contentPane.add(bottomRow, BorderLayout.SOUTH)
+        selDialog.isVisible = true
     }
 
     private fun openAnimePlayer(media: MediaItem, episode: EpisodeOrChapter, videos: List<VideoSource>) {

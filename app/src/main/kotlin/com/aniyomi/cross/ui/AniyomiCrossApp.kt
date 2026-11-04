@@ -556,21 +556,25 @@ fun MediaCatalogView(
                         }
                     }
 
-                    // 2. Si es Manga: Biblioteca en Español, Tipo de Cómic y Modo
+                    // 2. Si es Manga: Bibliotecas en Español, Tipo de Cómic y Modo
                     if (isManga) {
                         var currentSourceKey by remember { mutableStateOf("zonatmo") }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("Biblioteca en Español:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Row(
+                        LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            listOf(
+                            val sourcesList = listOf(
                                 "zonatmo" to "📚 ZonaTMO",
-                                "mangadex" to "⚡ MangaDex",
-                                "webtoons_es" to "📱 LINE Webtoon"
-                            ).forEach { (sKey, sLabel) ->
+                                "lectormangas" to "📖 LectorMangas",
+                                "webtoons_es" to "📱 LINE Webtoon",
+                                "lectorxd" to "⚡ LectorXD",
+                                "olympus" to "🏛️ Olympus",
+                                "mangadex" to "🌐 MangaDex"
+                            )
+                            items(sourcesList) { (sKey, sLabel) ->
                                 FilterChip(
                                     selected = currentSourceKey == sKey,
                                     onClick = {
@@ -875,6 +879,9 @@ fun MediaDetailView(
     var details by remember { mutableStateOf(media) }
     var list by remember { mutableStateOf<List<EpisodeOrChapter>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isMultiSelectMode by remember { mutableStateOf(false) }
+    val selectedItems = remember { mutableStateListOf<EpisodeOrChapter>() }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(media) {
         isLoading = true
@@ -960,12 +967,67 @@ fun MediaDetailView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = if (details.type == ContentType.ANIME) "Episodios Disponibles (${list.size})" else "Capítulos del Cómic (${list.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (details.type == ContentType.ANIME) "Episodios Disponibles (${list.size})" else "Capítulos del Cómic (${list.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+
+                    var showDownloadDropdown by remember { mutableStateOf(false) }
+                    Box {
+                        Button(
+                            onClick = { showDownloadDropdown = true },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Descarga Masiva", tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Descargar ▾", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+
+                        DropdownMenu(
+                            expanded = showDownloadDropdown,
+                            onDismissRequest = { showDownloadDropdown = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("⬇ Descargar capítulo seleccionado") },
+                                onClick = {
+                                    showDownloadDropdown = false
+                                    list.firstOrNull()?.let { first ->
+                                        if (details.type == ContentType.ANIME) onDownloadEpisode(first, source)
+                                        else onDownloadChapter(first, source)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("📦 Descargar TODOS (${list.size} en lote)") },
+                                onClick = {
+                                    showDownloadDropdown = false
+                                    coroutineScope.launch {
+                                        for (item in list) {
+                                            if (details.type == ContentType.ANIME) onDownloadEpisode(item, source)
+                                            else onDownloadChapter(item, source)
+                                        }
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("☑ Seleccionar capítulos...") },
+                                onClick = {
+                                    showDownloadDropdown = false
+                                    isMultiSelectMode = true
+                                }
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
@@ -992,12 +1054,23 @@ fun MediaDetailView(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(
-                                    imageVector = if (details.type == ContentType.ANIME) Icons.Default.PlayArrow else Icons.AutoMirrored.Filled.MenuBook,
-                                    contentDescription = null,
-                                    tint = if (details.type == ContentType.ANIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                if (isMultiSelectMode) {
+                                    Checkbox(
+                                        checked = selectedItems.contains(item),
+                                        onCheckedChange = { isChecked ->
+                                            if (isChecked) selectedItems.add(item)
+                                            else selectedItems.remove(item)
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                } else {
+                                    Icon(
+                                        imageVector = if (details.type == ContentType.ANIME) Icons.Default.PlayArrow else Icons.AutoMirrored.Filled.MenuBook,
+                                        contentDescription = null,
+                                        tint = if (details.type == ContentType.ANIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                }
                                 Text(
                                     text = item.name,
                                     style = MaterialTheme.typography.bodyLarge,
@@ -1005,18 +1078,49 @@ fun MediaDetailView(
                                     color = Color.White
                                 )
                             }
-                            Row {
-                                IconButton(
-                                    onClick = {
-                                        if (details.type == ContentType.ANIME) {
-                                            onDownloadEpisode(item, source)
-                                        } else {
-                                            onDownloadChapter(item, source)
-                                        }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                var showItemDropdown by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(
+                                        onClick = { showItemDropdown = true }
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = "Descargar", tint = Color.LightGray)
                                     }
-                                ) {
-                                    Icon(Icons.Default.Download, contentDescription = "Descargar", tint = Color.LightGray)
+
+                                    DropdownMenu(
+                                        expanded = showItemDropdown,
+                                        onDismissRequest = { showItemDropdown = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("⬇ Descargar este capítulo") },
+                                            onClick = {
+                                                showItemDropdown = false
+                                                if (details.type == ContentType.ANIME) onDownloadEpisode(item, source)
+                                                else onDownloadChapter(item, source)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("📦 Descargar TODOS (${list.size})") },
+                                            onClick = {
+                                                showItemDropdown = false
+                                                coroutineScope.launch {
+                                                    for (ch in list) {
+                                                        if (details.type == ContentType.ANIME) onDownloadEpisode(ch, source)
+                                                        else onDownloadChapter(ch, source)
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("☑ Seleccionar capítulos...") },
+                                            onClick = {
+                                                showItemDropdown = false
+                                                isMultiSelectMode = true
+                                            }
+                                        )
+                                    }
                                 }
+
                                 Button(
                                     onClick = {
                                         if (details.type == ContentType.ANIME) {
@@ -1033,6 +1137,49 @@ fun MediaDetailView(
                                     Text(if (details.type == ContentType.ANIME) "Ver" else "Leer", fontWeight = FontWeight.Bold)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isMultiSelectMode) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = 6.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("${selectedItems.size} seleccionados", color = Color.White, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { isMultiSelectMode = false; selectedItems.clear() }) {
+                            Text("Cancelar", color = Color.LightGray)
+                        }
+                        Button(
+                            onClick = {
+                                val toDownload = selectedItems.toList()
+                                isMultiSelectMode = false
+                                selectedItems.clear()
+                                coroutineScope.launch {
+                                    for (ch in toDownload) {
+                                        if (details.type == ContentType.ANIME) onDownloadEpisode(ch, source)
+                                        else onDownloadChapter(ch, source)
+                                    }
+                                }
+                            },
+                            enabled = selectedItems.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Descargar (${selectedItems.size})")
                         }
                     }
                 }

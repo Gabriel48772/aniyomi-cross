@@ -1,7 +1,7 @@
 {
-  "version": "1.3.0",
-  "versionCode": 6,
+  "version": "1.3.1",
+  "versionCode": 7,
   "apkUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk",
   "jarUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar",
-  "releaseNotes": "Versión 1.3.0: Lector webtoon integrado directamente en la misma hoja sin pestañas extra, integración de bibliotecas oficiales en Español (ZonaTMO, MangaDex y LINE Webtoon), botón con ícono para comprobación manual de actualizaciones en tiempo real y rediseño de interfaz moderna con selector de biblioteca y comparación de versiones."
+  "releaseNotes": "Versión 1.3.1: Extracción de bibliotecas 100% en Español de ZonaTMO, LectorMangas, LINE Webtoons, LectorXD, Olympus Scanlation y MangaDex. Exclusión total de contenidos sin capítulos en español. Menú desplegable en el botón de descarga para descargar capítulo individual, descarga masiva de todos los capítulos o selección múltiple."
 }
