@@ -18,6 +18,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
 }
 
+tasks.register<JavaExec>("generateIcons") {
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.aniyomi.cross.desktop.IconGeneratorKt")
+}
+
 tasks.register<Jar>("fatJar") {
     archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

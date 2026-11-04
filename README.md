@@ -1,86 +1,88 @@
-# Aniyomi Cross (Multiplataforma PC & Android)
+# 🌟 Aniyomi Cross (Multiplataforma PC & Android)
 
-Aplicación multiplataforma inspirada en **Aniyomi**, desarrollada con arquitectura modular en **Kotlin Multiplatform (Android Jetpack Compose + Desktop)** para disfrutar y descargar anime, series, mangas y manhwas de forma completamente gratuita, utilizando los repositorios y extensiones del ecosistema Aniyomi y Tachiyomi / Keiyoushi.
+<p align="center">
+  <img src="dist/icon.png" width="140" height="140" alt="Aniyomi Cross Logo" style="border-radius: 28px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+</p>
 
----
+<p align="center">
+  <b>La plataforma definitiva todo-en-uno para ver Anime y leer Manga / Manhwa / Webtoons 100% en Español.</b><br>
+  Disponible de forma nativa para <b>Teléfonos Android (APK)</b> y para <b>Computadoras (Windows PC)</b>.
+</p>
 
-## 🚀 Archivos Listos para Usar (`dist/`)
-
-1. **Para Teléfonos Android (APK)**:
-   - Archivo: `dist/AniyomiCross-Android.apk`
-   - O ejecuta: `install-android.bat` (instala directamente al teléfono conectado por USB con depuración activada).
-
-2. **Para PC (Windows)**:
-   - Archivo: `dist/AniyomiCross-PC.jar`
-   - O ejecuta directamente con un doble clic: `run-pc.bat`.
-
----
-
-## 🧩 Repositorios de Extensiones Soportados
-
-La aplicación viene configurada para indexar, descargar y consumir las extensiones de:
-
-### 📺 Extensiones de Anime:
-- **Yuzono Anime Repo**: `https://raw.githubusercontent.com/yuzono/anime-repo/repo/index.min.json` (y `.pb`)
-- **SalmanBappi Anime Repo**: `https://raw.githubusercontent.com/salmanbappi/extensions-repo/main/index.min.json` (y `.pb`)
-
-### 📖 Extensiones de Manga y Manhwa:
-- **Keiyoushi Extensions Repo**: `https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.json` (más de 1,440 extensiones disponibles en español, inglés y más).
-- **Suwayomi Extensions Repo**: `https://raw.githubusercontent.com/suwayomi/tachiyomi-extension/repo/index.min.json`
+<p align="center">
+  <a href="https://github.com/Gabriel48772/aniyomi-cross/releases"><img src="https://img.shields.io/badge/Versi%C3%B3n-1.3.2%20(Estable)-00F0FF?style=for-the-badge&logo=android" alt="Versión"></a>
+  <img src="https://img.shields.io/badge/Idioma-100%25%20Espa%C3%B1ol-FF2A6D?style=for-the-badge" alt="Español">
+  <img src="https://img.shields.io/badge/Plataformas-Android%20%7C%20Windows-8B5CF6?style=for-the-badge" alt="Plataformas">
+</p>
 
 ---
 
-## 🛠️ Arquitectura del Proyecto
+## 📥 CENTRO DE DESCARGAS OFICIAL
 
-El código está estructurado en 3 módulos limpios:
+| Plataforma | Archivo de Descarga | Tipo | Instrucciones Rápidas |
+| :--- | :--- | :--- | :--- |
+| 📱 **Android (Teléfono)** | [📥 **Descargar APK para Teléfono**](dist/AniyomiCross-Android.apk?raw=true) | `.apk` (v1.3.2) | Descarga en tu celular y pulsa "Instalar". |
+| 💻 **PC (Instalador Windows)** | [🚀 **Descargar Instalador para PC**](dist/Instalador-AniyomiCross-PC.bat?raw=true) | `.bat` / `.ps1` | Descarga y haz doble clic para instalar con acceso directo e icono. |
+| 💻 **PC (Ejecutable Directo)** | [📦 **Descargar Ejecutable .jar**](dist/AniyomiCross-PC.jar?raw=true) | `.jar` portable | Ejecuta directamente con doble clic o con `run-pc.bat`. |
+
+> [!TIP]
+> **Para usuarios de PC**: Recomendamos descargar el **[Instalador para PC](dist/Instalador-AniyomiCross-PC.bat?raw=true)**. Creará automáticamente los accesos directos en tu Escritorio y en tu Menú Inicio con el logo oficial de Aniyomi Cross.
+
+---
+
+## 🆕 Novedades de la Versión 1.3.2
+
+1. **Corrección Total del Reproductor y Descarga de Animes**:
+   - **Cero Animes Incorrectos**: Implementado algoritmo estricto de coincidencia fonética y de títulos (`isTitleMatch`). NUNCA volverá a descargarse ni reproducirse una serie equivocada (como Giant Killing, Fractale u otros animes de recomendaciones).
+   - **Servidores Directos en Español**: Decodificación en tiempo real de enlaces directos de JKanime, MonosChinos y AnimeFLV (Mediafire, Streamwish, VOE 1080p, Mp4upload, Streamtape y Mega).
+2. **Descarga en MP4 para ver Offline en el Teléfono**:
+   - Corrección en la app de Android del motor de almacenamiento y reproductor ExoPlayer.
+   - Ahora los animes descargados se guardan como archivos de video reales (`.mp4`) en el almacenamiento del dispositivo y se muestran de inmediato en la pestaña de **Descargas Offline** para reproducirlos sin conexión a internet.
+3. **Nuevo Logo e Icono Oficial de Aniyomi Cross**:
+   - Icono premium neón cyberpunk obsidian para la ventana, barra de tareas y accesos directos de PC.
+   - Icono adaptive vector y mipmaps de alta resolución para el launcher de Android.
+4. **Instalador Oficial para Windows PC**:
+   - Asistente de instalación interactivo con selección de directorio, creación de acceso directo en el Escritorio con icono y registro en el Menú Inicio de Windows.
+5. **Bibliotecas de Manga 100% en Español**:
+   - Catálogos integrados de ZonaTMO, LectorMangas, LINE Webtoons Oficial, LectorXD, Olympus Scanlation y MangaDex.
+   - Filtro estricto que descarta automáticamente cualquier capítulo que no esté en español.
+   - Descarga individual, masiva de todos los capítulos o por selección múltiple.
+
+---
+
+## 🛠️ Estructura del Proyecto
 
 ```text
 aniyomi-multiplatform/
 ├── core/                       # Núcleo compartido (Multiplataforma)
-│   ├── model/                  # Modelos de datos (MediaItem, ExtensionMeta, VideoSource, MangaPage)
-│   ├── network/                # Cliente OkHttp con DNS Bypass (8.8.8.8/1.1.1.1) y DoH
-│   ├── repository/             # Gestor de repositorios (Keiyoushi, Yuzono, Salmanbappi)
-│   └── scrapers/               # Fuentes directas (AnimeFLV, MangaDex, JKanime)
-├── app/                        # Aplicación Android nativa con Jetpack Compose & Media3 ExoPlayer
-│   └── src/main/kotlin/com/aniyomi/cross/
-│       ├── MainActivity.kt
-│       ├── ui/AniyomiCrossApp.kt # Interfaz Material 3 con 4 pestañas y reproductores
-│       └── downloader/         # Gestor de descargas en almacenamiento local
-├── desktop/                    # Aplicación de PC (Windows)
-│   └── src/main/kotlin/com/aniyomi/cross/desktop/
-│       └── DesktopMain.kt      # GUI para PC con buscador, reproductor web y visor
-├── dist/                       # Artefactos compilados listos para distribución
-│   ├── AniyomiCross-Android.apk
-│   └── AniyomiCross-PC.jar
-├── run-pc.bat                  # Lanzador directo de 1 clic para PC
-├── install-android.bat         # Instalador ADB para Android
-└── build-all.bat               # Compilador de ambas versiones con Gradle
+│   ├── model/                  # Modelos de datos (MediaItem, VideoSource, MangaPage)
+│   ├── network/                # Cliente OkHttp con DNS Bypass (8.8.8.8 / 1.1.1.1)
+│   ├── scrapers/               # Fuentes directas (AnimeFLV, JKanime, MonosChinos, ZonaTMO, etc.)
+│   └── updater/                # Gestor de auto-actualizaciones desde GitHub
+├── app/                        # Aplicación Android (Jetpack Compose & Media3 ExoPlayer)
+│   └── src/main/
+│       ├── res/drawable/       # Iconos adaptive oficiales
+│       └── res/mipmap-*/       # Iconos PNG de alta resolución para launcher
+├── desktop/                    # Aplicación para PC (Java Swing & Reproductor Cinema 1080p)
+│   └── src/main/resources/icons/ # Iconos oficiales .ico y .png
+├── dist/                       # Artefactos finales listos para descargar
+│   ├── AniyomiCross-Android.apk # APK para celulares Android
+│   ├── Instalador-AniyomiCross-PC.bat # Instalador para Windows
+│   ├── AniyomiCross-PC.jar     # Ejecutable para PC
+│   ├── icon.ico                # Icono para Windows
+│   └── icon.png                # Logo oficial
+└── installer/
+    └── setup.ps1               # Script de instalación gráfica para Windows
 ```
 
 ---
 
-## ✨ Características Principales
+## 💻 Compilación desde Código Fuente
 
-1. **Buscador y Catálogo Global**:
-   - Pestaña de **Anime**: series en emisión, populares y búsqueda por título.
-   - Pestaña de **Manga y Manhwa**: catálogo con lecturas en cascada vertical (Webtoon) y clásico.
-2. **Reproductor y Lector Integrados**:
-   - Selector de calidad de video (1080p, 720p, etc.) y streaming HLS (`.m3u8`) o MP4 sin anuncios molestos.
-   - Lector continuo de páginas de manga de alta resolución.
-3. **Descargas Offline**:
-   - Descarga capítulos enteros de manga o episodios de anime a tu almacenamiento para verlos sin conexión a internet ni gastar datos móviles.
-4. **Bypass de DNS y Bloqueos de ISP**:
-   - Integra resolución directa contra los servidores DNS de Google (`8.8.8.8`) y Cloudflare (`1.1.1.1`), evitando que proveedores de internet bloqueen el acceso a los repositorios de GitHub o servidores de streaming.
-
----
-
-## 💻 Cómo volver a compilar
-
-Si realizas modificaciones en el código fuente, puedes recompilar todo ejecutando:
-```cmd
-build-all.bat
-```
-o mediante terminal:
+Si deseas compilar los ejecutables tú mismo:
 ```bash
 ./gradlew.bat :desktop:fatJar :app:assembleDebug
 ```
+Los archivos resultantes se ubican en:
+- PC: `desktop/build/libs/desktop-all.jar` -> `dist/AniyomiCross-PC.jar`
+- Android: `app/build/outputs/apk/debug/app-debug.apk` -> `dist/AniyomiCross-Android.apk`

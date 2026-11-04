@@ -131,6 +131,17 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         setLocationRelativeTo(null)
         contentPane.background = Theme.BG_MAIN
 
+        try {
+            val iconStream = javaClass.getResourceAsStream("/icons/icon.png")
+            if (iconStream != null) {
+                val iconImg = ImageIO.read(iconStream)
+                this.iconImage = iconImg
+                if (Taskbar.isTaskbarSupported() && Taskbar.getTaskbar().isSupported(Taskbar.Feature.ICON_IMAGE)) {
+                    Taskbar.getTaskbar().iconImage = iconImg
+                }
+            }
+        } catch (e: Exception) {}
+
         setupHeader()
         setupContentPanels()
         loadInitialData()
@@ -1044,6 +1055,64 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             downloadMenu.show(downloadBtn, 0, downloadBtn.height)
         }
 
+        fun triggerOpenSelected() {
+            val selected = jlist.selectedValue ?: if (listModel.size() > 0) listModel.getElementAt(0) else null
+            if (selected == null) {
+                JOptionPane.showMessageDialog(dialog, "No hay ningún capítulo o episodio seleccionado.")
+                return
+            }
+            if (isAnime) {
+                actionBtn.isEnabled = false
+                actionBtn.text = "Buscando servidores..."
+                scope.launch {
+                    val videos = animeSource.getVideoList(selected)
+                    withContext(Dispatchers.Swing) {
+                        actionBtn.isEnabled = true
+                        actionBtn.text = "▶ Ver Episodio Seleccionado"
+                        if (videos.isNotEmpty() && videos.first().videoUrl.isNotBlank()) {
+                            openAnimePlayer(item, selected, videos)
+                        } else {
+                            JOptionPane.showMessageDialog(
+                                dialog,
+                                "No se encontraron servidores activos para este episodio.\nPuede estar en proceso de subida o en sincronización.",
+                                "Aviso de Servidor",
+                                JOptionPane.WARNING_MESSAGE
+                            )
+                        }
+                    }
+                }
+            } else {
+                actionBtn.isEnabled = false
+                actionBtn.text = "Cargando páginas..."
+                scope.launch {
+                    val pages = mangaSource.getPageList(selected)
+                    withContext(Dispatchers.Swing) {
+                        actionBtn.isEnabled = true
+                        actionBtn.text = "📖 Leer Capítulo Seleccionado"
+                        if (pages.isNotEmpty()) {
+                            openMangaReader(item, selected, pages)
+                        } else {
+                            JOptionPane.showMessageDialog(
+                                dialog,
+                                "No se pudieron cargar las páginas de este capítulo.",
+                                "Aviso",
+                                JOptionPane.WARNING_MESSAGE
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        actionBtn.addActionListener { triggerOpenSelected() }
+        jlist.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (e.clickCount == 2) {
+                    triggerOpenSelected()
+                }
+            }
+        })
+
         btnPanel.add(downloadBtn)
         btnPanel.add(actionBtn)
 
@@ -1194,7 +1263,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
     private fun openAnimePlayer(media: MediaItem, episode: EpisodeOrChapter, videos: List<VideoSource>) {
         val playerDialog = JDialog(this, "Reproductor Cinema - ${media.title}", true)
-        playerDialog.setSize(750, 430)
+        playerDialog.setSize(780, 500)
         playerDialog.setLocationRelativeTo(this)
         playerDialog.contentPane.background = Theme.BG_MAIN
         playerDialog.layout = BorderLayout()
@@ -1206,35 +1275,114 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         val titleLbl = JLabel("<html><font color='#ffffff' size='5'><b>${media.title}</b></font><br><font color='#8b5cf6' size='3'>${episode.name}</font></html>")
         content.add(titleLbl, BorderLayout.NORTH)
 
-        val centerPanel = JPanel(GridLayout(0, 1, 12, 12))
+        val centerPanel = JPanel()
+        centerPanel.layout = BoxLayout(centerPanel, BoxLayout.Y_AXIS)
         centerPanel.isOpaque = false
 
-        val infoLabel = JLabel("<html><font color='#a0a5b9'>Selecciona calidad para reproducir sin anuncios:</font></html>")
+        val infoLabel = JLabel("<html><font color='#00f0ff'><b>Servidores Disponibles en Español:</b></font><br><font color='#a0a5b9'>Selecciona cómo deseas disfrutar este episodio:</font></html>")
         centerPanel.add(infoLabel)
+        centerPanel.add(Box.createVerticalStrut(12))
+
+        val scrollServerPanel = JPanel(GridLayout(0, 1, 8, 8))
+        scrollServerPanel.isOpaque = false
 
         for (v in videos) {
-            val playBtn = createActionButton("▶ Reproducir en Reproductor HTML5 (${v.quality})", Theme.ACCENT_PURPLE)
+            val serverRow = JPanel(BorderLayout(8, 0))
+            serverRow.background = Theme.BG_SURFACE
+            serverRow.border = BorderFactory.createCompoundBorder(
+                RoundedBorder(Theme.BORDER_COLOR, 10, 1),
+                EmptyBorder(8, 12, 8, 12)
+            )
+
+            val serverTitle = JLabel(v.quality)
+            serverTitle.foreground = Color.WHITE
+            serverTitle.font = Font("Segoe UI", Font.BOLD, 13)
+
+            val actionBtns = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0))
+            actionBtns.isOpaque = false
+
+            val playBtn = createActionButton("▶ Ver", Theme.ACCENT_PURPLE)
             playBtn.addActionListener {
                 launchHtml5Player(media.title, episode.name, v.videoUrl)
             }
-            centerPanel.add(playBtn)
+
+            val vlcBtn = createActionButton("🎬 VLC", Theme.BG_INPUT)
+            vlcBtn.toolTipText = "Reproducir directamente en VLC Media Player"
+            vlcBtn.addActionListener {
+                val launched = launchExternalVlc(v.videoUrl)
+                if (!launched) {
+                    val sel = StringSelection(v.videoUrl)
+                    Toolkit.getDefaultToolkit().systemClipboard.setContents(sel, sel)
+                    JOptionPane.showMessageDialog(playerDialog, "No se encontró VLC instalado en la ruta por defecto.\nSe ha copiado el enlace directo al portapapeles para pegarlo en tu reproductor (Ctrl+V).")
+                }
+            }
+
+            actionBtns.add(playBtn)
+            actionBtns.add(vlcBtn)
+
+            serverRow.add(serverTitle, BorderLayout.CENTER)
+            serverRow.add(actionBtns, BorderLayout.EAST)
+            scrollServerPanel.add(serverRow)
         }
 
-        val copyLinkBtn = createActionButton("📋 Copiar Enlace Directo (VLC / PotPlayer / MPV)", Theme.BG_INPUT)
+        val scroll = JScrollPane(scrollServerPanel)
+        scroll.isOpaque = false
+        scroll.viewport.isOpaque = false
+        scroll.border = EmptyBorder(0, 0, 0, 0)
+        styleScrollBar(scroll)
+        centerPanel.add(scroll)
+
+        val bottomRow = JPanel(FlowLayout(FlowLayout.RIGHT, 10, 8))
+        bottomRow.isOpaque = false
+
+        val copyLinkBtn = createActionButton("📋 Copiar Enlace Directo", Theme.BG_INPUT)
         copyLinkBtn.addActionListener {
-            val sel = StringSelection(videos.first().videoUrl)
-            Toolkit.getDefaultToolkit().systemClipboard.setContents(sel, sel)
-            JOptionPane.showMessageDialog(playerDialog, "¡Enlace copiado! Pégalo en VLC con (Ctrl + N).")
+            val firstUrl = videos.firstOrNull()?.videoUrl ?: ""
+            if (firstUrl.isNotBlank()) {
+                val sel = StringSelection(firstUrl)
+                Toolkit.getDefaultToolkit().systemClipboard.setContents(sel, sel)
+                JOptionPane.showMessageDialog(playerDialog, "¡Enlace copiado al portapapeles!")
+            }
         }
-        centerPanel.add(copyLinkBtn)
+        bottomRow.add(copyLinkBtn)
 
         content.add(centerPanel, BorderLayout.CENTER)
+        content.add(bottomRow, BorderLayout.SOUTH)
         playerDialog.contentPane.add(content)
         playerDialog.isVisible = true
     }
 
+    private fun launchExternalVlc(videoUrl: String): Boolean {
+        val vlcCandidates = listOf(
+            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+            "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
+            "vlc"
+        )
+        for (candidate in vlcCandidates) {
+            val f = File(candidate)
+            if (f.exists() || candidate == "vlc") {
+                return try {
+                    ProcessBuilder(candidate, videoUrl).start()
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+        }
+        return false
+    }
+
     private fun launchHtml5Player(title: String, episodeName: String, videoUrl: String) {
         try {
+            // Si es un iframe embebido directo (ej. VOE, Filemoon, JKanime player, Streamwish)
+            if (videoUrl.contains("voe.sx") || videoUrl.contains("filemoon") || videoUrl.contains("dood") ||
+                videoUrl.contains("streamwish") || videoUrl.contains("mp4upload") || videoUrl.contains("jkplayer")) {
+                // Abrir directamente en el navegador predeterminado para evitar bloqueos por iframe sandbox
+                Desktop.getDesktop().browse(URI.create(videoUrl))
+                return
+            }
+
+            // Reproductor integrado local sin bloqueos de CORS
             val html = """
                 <!DOCTYPE html>
                 <html lang="es">
@@ -1260,14 +1408,10 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                         <span>$episodeName</span>
                     </div>
                     <div class="player-box">
-                    ${if (videoUrl.contains("/e/") || videoUrl.contains("/embed") || videoUrl.contains("videoembed") || videoUrl.contains("filemoon") || videoUrl.contains("dood") || videoUrl.contains("voe") || videoUrl.contains("streamwish") || videoUrl.contains("mp4upload")) """
-                        <iframe src="$videoUrl" style="width: 100%; height: 80vh; border: none; display: block;" allowfullscreen allow="autoplay; fullscreen"></iframe>
-                    """ else """
                         <video id="video-element" controls autoplay playsinline crossorigin="anonymous">
                             <source src="$videoUrl" type="video/mp4">
-                            Tu navegador no soporta video.
+                            Tu navegador no soporta video directo.
                         </video>
-                    """}
                     </div>
                     <div class="footer">
                         <span>Aniyomi Cross • Cinema Player</span>

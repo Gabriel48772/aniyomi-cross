@@ -5,8 +5,8 @@ import android.os.Environment
 import com.aniyomi.cross.model.ContentType
 import com.aniyomi.cross.model.DownloadTask
 import com.aniyomi.cross.model.EpisodeOrChapter
+import com.aniyomi.cross.model.MangaPage
 import com.aniyomi.cross.model.MediaItem
-import com.aniyomi.cross.network.NetworkClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,18 +15,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
-class CrossDownloadManager(private val context: Context) {
+class CrossDownloadManager(
+    private val context: Context,
+    private val offlineStorage: OfflineStorageManager
+) {
 
     private val _tasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     val tasks: StateFlow<List<DownloadTask>> = _tasks.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.IO)
-
-    private val baseDir: File by lazy {
-        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "AniyomiCross")
-        if (!dir.exists()) dir.mkdirs()
-        dir
-    }
 
     fun downloadEpisode(media: MediaItem, episode: EpisodeOrChapter, videoUrl: String) {
         val task = DownloadTask(
@@ -37,19 +34,23 @@ class CrossDownloadManager(private val context: Context) {
             type = ContentType.ANIME
         )
 
-        _tasks.value = _tasks.value + task
+        _tasks.value = _tasks.value.filter { it.id != task.id } + task
 
         scope.launch {
-            val sanitizedMedia = media.title.replace(Regex("[^a-zA-Z0-9.-]"), "_")
-            val sanitizedEp = episode.name.replace(Regex("[^a-zA-Z0-9.-]"), "_")
-            val targetFile = File(File(baseDir, "Anime/$sanitizedMedia"), "$sanitizedEp.mp4")
-
-            val success = NetworkClient.downloadToFile(videoUrl, targetFile) { progress ->
+            val file = offlineStorage.downloadAnimeEpisode(media, episode, videoUrl) { progress ->
                 updateTaskProgress(task.id, progress)
             }
 
-            if (success) {
-                markCompleted(task.id, targetFile.absolutePath)
+            if (file != null && file.exists()) {
+                markCompleted(task.id, file.absolutePath)
+                try {
+                    android.media.MediaScannerConnection.scanFile(
+                        context,
+                        arrayOf(file.absolutePath),
+                        arrayOf("video/mp4"),
+                        null
+                    )
+                } catch (e: Exception) {}
             }
         }
     }
@@ -63,24 +64,17 @@ class CrossDownloadManager(private val context: Context) {
             type = ContentType.MANGA
         )
 
-        _tasks.value = _tasks.value + task
+        _tasks.value = _tasks.value.filter { it.id != task.id } + task
 
         scope.launch {
-            val sanitizedMedia = media.title.replace(Regex("[^a-zA-Z0-9.-]"), "_")
-            val sanitizedCh = chapter.name.replace(Regex("[^a-zA-Z0-9.-]"), "_")
-            val chapterDir = File(File(baseDir, "Manga/$sanitizedMedia"), sanitizedCh)
-            chapterDir.mkdirs()
-
-            var count = 0
-            for ((idx, pUrl) in pageUrls.withIndex()) {
-                val pageFile = File(chapterDir, "page_${idx + 1}.jpg")
-                NetworkClient.downloadToFile(pUrl, pageFile)
-                count++
-                val prog = count.toFloat() / pageUrls.size.toFloat()
-                updateTaskProgress(task.id, prog)
+            val pages = pageUrls.mapIndexed { idx, u -> MangaPage(idx + 1, u) }
+            val dir = offlineStorage.downloadMangaChapter(media, chapter, pages) { progress ->
+                updateTaskProgress(task.id, progress)
             }
 
-            markCompleted(task.id, chapterDir.absolutePath)
+            if (dir != null && dir.exists()) {
+                markCompleted(task.id, dir.absolutePath)
+            }
         }
     }
 

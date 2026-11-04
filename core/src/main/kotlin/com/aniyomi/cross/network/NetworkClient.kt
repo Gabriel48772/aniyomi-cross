@@ -78,31 +78,60 @@ object NetworkClient {
         }
     }
 
-    fun downloadToFile(url: String, destinationFile: File, onProgress: (Float) -> Unit = {}): Boolean {
-        destinationFile.parentFile?.mkdirs()
-        val request = Request.Builder().url(url).build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return false
-            val body = response.body ?: return false
-            val contentLength = body.contentLength()
-
-            body.byteStream().use { input: InputStream ->
-                FileOutputStream(destinationFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalRead = 0L
-
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        totalRead += bytesRead
-                        if (contentLength > 0) {
-                            onProgress(totalRead.toFloat() / contentLength.toFloat())
-                        }
-                    }
-                    output.flush()
-                }
+    fun getBytes(url: String, headers: Map<String, String> = emptyMap()): ByteArray? {
+        val requestBuilder = Request.Builder().url(url)
+        headers.forEach { (k, v) -> requestBuilder.header(k, v) }
+        return try {
+            okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) null
+                else response.body?.bytes()
             }
+        } catch (e: Exception) {
+            null
         }
-        return true
+    }
+
+    fun downloadToFile(
+        url: String,
+        destinationFile: File,
+        onProgress: (Float) -> Unit
+    ): Boolean = downloadToFile(url, destinationFile, emptyMap(), onProgress)
+
+    fun downloadToFile(
+        url: String,
+        destinationFile: File,
+        headers: Map<String, String> = emptyMap(),
+        onProgress: (Float) -> Unit = {}
+    ): Boolean {
+        destinationFile.parentFile?.mkdirs()
+        val requestBuilder = Request.Builder().url(url)
+        headers.forEach { (k, v) -> requestBuilder.header(k, v) }
+        return try {
+            okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) return false
+                val body = response.body ?: return false
+                val contentLength = body.contentLength()
+
+                body.byteStream().use { input: InputStream ->
+                    FileOutputStream(destinationFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalRead = 0L
+
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+                            if (contentLength > 0) {
+                                onProgress(totalRead.toFloat() / contentLength.toFloat())
+                            }
+                        }
+                        output.flush()
+                    }
+                }
+                true
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 }

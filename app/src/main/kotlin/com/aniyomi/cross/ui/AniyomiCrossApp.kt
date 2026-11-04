@@ -69,8 +69,12 @@ fun AniyomiCrossApp() {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val repoManager = remember { ExtensionRepositoryManager() }
-    val downloadManager = remember { CrossDownloadManager(context) }
-    val offlineStorage = remember { OfflineStorageManager(File(context.getExternalFilesDir(null) ?: context.filesDir, "AniyomiCrossDownloads")) }
+    val offlineStorage = remember {
+        OfflineStorageManager(
+            File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, "AniyomiCrossDownloads")
+        )
+    }
+    val downloadManager = remember { CrossDownloadManager(context, offlineStorage) }
 
     val animeSource = remember { AniListAnimeSource() }
     val mangaSource = remember { UnifiedSpanishMangaSource() }
@@ -240,9 +244,12 @@ fun AniyomiCrossApp() {
                         onDownloadEpisode = { ep, source ->
                             coroutineScope.launch {
                                 val videos = source.getVideoList(ep)
-                                if (videos.isNotEmpty()) {
-                                    downloadManager.downloadEpisode(selectedMedia!!, ep, videos.first().videoUrl)
-                                    offlineStorage.downloadAnimeEpisode(selectedMedia!!, ep, videos.first().videoUrl) { }
+                                val validVideo = videos.firstOrNull { it.videoUrl.isNotBlank() && it.format != "NOTICE" }
+                                if (validVideo != null) {
+                                    downloadManager.downloadEpisode(selectedMedia!!, ep, validVideo.videoUrl)
+                                    snackbarHostState.showSnackbar("Descarga iniciada: ${ep.name}")
+                                } else {
+                                    snackbarHostState.showSnackbar("No hay servidores disponibles para descargar este episodio.")
                                 }
                             }
                         },
@@ -251,7 +258,9 @@ fun AniyomiCrossApp() {
                                 val pages = source.getPageList(ch)
                                 if (pages.isNotEmpty()) {
                                     downloadManager.downloadChapter(selectedMedia!!, ch, pages.map { it.imageUrl })
-                                    offlineStorage.downloadMangaChapter(selectedMedia!!, ch, pages) { }
+                                    snackbarHostState.showSnackbar("Descarga iniciada: ${ch.name}")
+                                } else {
+                                    snackbarHostState.showSnackbar("No se pudieron cargar páginas para descargar.")
                                 }
                             }
                         }
@@ -1199,11 +1208,13 @@ fun VideoPlayerView(videoSource: VideoSource, onBack: () -> Unit) {
             val uri = Uri.parse(videoSource.videoUrl)
             val mediaItem = ExoMediaItem.fromUri(uri)
 
-            val dataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .setAllowCrossProtocolRedirects(true)
                 .setConnectTimeoutMs(20000)
                 .setReadTimeoutMs(20000)
+
+            val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
 
             val mediaSource = if (videoSource.videoUrl.contains(".m3u8") || videoSource.format == "HLS") {
                 androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
