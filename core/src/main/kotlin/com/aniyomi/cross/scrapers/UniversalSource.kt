@@ -107,7 +107,9 @@ class AniListAnimeSource : CrossSource {
             for (i in 0 until mediaArray.length()) {
                 val item = mediaArray.getJSONObject(i)
                 val titles = item.getJSONObject("title")
-                val title = titles.optString("english", titles.optString("romaji", titles.optString("native", "Anime")))
+                val romaji = titles.optString("romaji", "")
+                val english = titles.optString("english", "")
+                val title = if (english.isNotEmpty()) english else if (romaji.isNotEmpty()) romaji else "Anime"
                 val cover = item.getJSONObject("coverImage").optString("extraLarge", item.getJSONObject("coverImage").optString("large", ""))
                 val episodes = item.optInt("episodes", 0)
                 val desc = item.optString("description", "Sin descripción disponible.")
@@ -129,7 +131,7 @@ class AniListAnimeSource : CrossSource {
                     MediaItem(
                         id = item.getInt("id").toString(),
                         title = title,
-                        url = "https://anilist.co/anime/${item.getInt("id")}",
+                        url = "$romaji:::alt::$english",
                         coverUrl = cover,
                         type = ContentType.ANIME,
                         description = desc.replace(Regex("<[^>]*>"), ""),
@@ -166,12 +168,15 @@ class AniListAnimeSource : CrossSource {
             val jsonObj = JSONObject(res).getJSONObject("data").getJSONObject("Media")
             totalEpisodes = jsonObj.optInt("episodes", 0)
             if (totalEpisodes <= 0) {
-                // Si la serie está en emisión o no reporta el total (ej. One Piece o series largas), dar al menos 25 o buscar en JKanime
                 totalEpisodes = 24
             }
         } catch (e: Exception) {
             // Usar default
         }
+
+        val titlesParts = media.url.split(":::alt::")
+        val romaji = if (titlesParts.isNotEmpty()) titlesParts[0] else ""
+        val english = if (titlesParts.size > 1) titlesParts[1] else ""
 
         for (i in 1..totalEpisodes) {
             episodes.add(
@@ -179,7 +184,7 @@ class AniListAnimeSource : CrossSource {
                     id = "${media.id}_ep_$i",
                     name = "Episodio $i - Sub Español (Oficial)",
                     number = i.toFloat(),
-                    url = "${media.title}:::ep::$i",
+                    url = "${media.title}:::romaji::$romaji:::eng::$english:::ep::$i",
                     uploadDate = "Reciente"
                 )
             )
@@ -190,80 +195,118 @@ class AniListAnimeSource : CrossSource {
     override suspend fun getVideoList(episode: EpisodeOrChapter): List<VideoSource> = withContext(Dispatchers.IO) {
         val list = mutableListOf<VideoSource>()
         try {
-            // Extraer título del anime y número de episodio del campo URL
-            val parts = episode.url.split(":::ep::")
-            val animeTitle = if (parts.isNotEmpty()) parts[0] else episode.name
-            val epNum = if (parts.size > 1) parts[1].toFloatOrNull() ?: episode.number else episode.number
-            val epInt = epNum.toInt().coerceAtLeast(1)
+            // Extraer títulos candidatos y número de episodio
+            val raw = episode.url
+            val epNumMatch = Regex(":::ep::(\\d+)").find(raw)
+            val epInt = epNumMatch?.groupValues?.get(1)?.toIntOrNull() ?: episode.number.toInt().coerceAtLeast(1)
 
-            // Limpiar título para búsqueda precisa en JKanime
-            val cleanTitle = animeTitle
-                .replace(Regex("""\[.*?\]|\(.*?\)|Season \d+|Temporada \d+|2nd Season|3rd Season|Part \d+"""), "")
-                .trim()
-            val encodedQ = URLEncoder.encode(cleanTitle, "UTF-8")
+            val romajiMatch = Regex(":::romaji::(.*?)(:::|$)").find(raw)
+            val engMatch = Regex(":::eng::(.*?)(:::|$)").find(raw)
+            val titleClean = raw.substringBefore(":::").replace(Regex("""\[.*?\]|\(.*?\)|Season \d+|Temporada \d+|2nd Season|3rd Season|Part \d+"""), "").trim()
 
-            // 1. Buscar slug del anime en JKanime
-            val searchUrl = "https://jkanime.net/buscar?q=$encodedQ"
-            val searchHtml = NetworkClient.get(searchUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val romaji = romajiMatch?.groupValues?.get(1)?.trim() ?: ""
+            val english = engMatch?.groupValues?.get(1)?.trim() ?: ""
 
-            val slugRegex = Regex("""href=["']https://jkanime\.net/([a-zA-Z0-9-]+)/["']""")
-            val matches = slugRegex.findAll(searchHtml).toList()
-            val validSlugs = matches.map { it.groupValues[1] }.filter { it != "buscar" && it != "dash" && it != "img" }
-            val slug = validSlugs.firstOrNull()
+            // Lista de variantes de búsqueda ordenadas por probabilidad de coincidencia en JKanime
+            val queryCandidates = mutableListOf<String>()
+            if (romaji.isNotEmpty()) {
+                queryCandidates.add(romaji.replace(Regex("""\[.*?\]|\(.*?\)|Season \d+|Temporada \d+|Part \d+"""), "").trim())
+                // Primeras 2 o 3 palabras del título en romaji (ej: "Sousou no", "Ore dake", "Kimetsu no")
+                val words = romaji.split(" ").filter { it.length > 2 }
+                if (words.size >= 2) queryCandidates.add("${words[0]} ${words[1]}")
+                if (words.isNotEmpty()) queryCandidates.add(words[0])
+            }
+            if (titleClean.isNotEmpty()) {
+                queryCandidates.add(titleClean)
+                val words = titleClean.split(" ").filter { it.length > 2 }
+                if (words.size >= 2) queryCandidates.add("${words[0]} ${words[1]}")
+                if (words.isNotEmpty()) queryCandidates.add(words[0])
+            }
+            if (english.isNotEmpty() && english != titleClean) {
+                queryCandidates.add(english)
+            }
 
-            if (slug != null) {
-                // 2. Consultar el episodio específico: https://jkanime.net/{slug}/{epInt}/
-                val episodePageUrl = "https://jkanime.net/$slug/$epInt/"
-                val epHtml = NetworkClient.get(episodePageUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+            val foundSlugs = mutableSetOf<String>()
 
-                // 3. Extraer reproductores embebidos de JKanime
-                val playerUrlRegex = Regex("""https://jkanime\.net/jkplayer/([a-zA-Z0-9]+)\?e=([a-zA-Z0-9_=&-]+)""")
-                val playerMatches = playerUrlRegex.findAll(epHtml).toList()
+            // 1. Buscar slug del anime en JKanime con las variantes
+            for (candidate in queryCandidates.distinct().take(4)) {
+                if (candidate.isBlank()) continue
+                try {
+                    val encodedQ = URLEncoder.encode(candidate, "UTF-8")
+                    val searchUrl = "https://jkanime.net/buscar?q=$encodedQ"
+                    val searchHtml = NetworkClient.get(searchUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
 
-                for ((idx, pm) in playerMatches.take(3).withIndex()) {
-                    val playerUrl = pm.value
-                    try {
-                        val playerHtml = NetworkClient.get(playerUrl, mapOf(
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                            "Referer" to "https://jkanime.net/"
-                        ))
-                        val sourceRegex = Regex("""<source src=['"]([^'"]+)['"]""")
-                        val streamMatch = sourceRegex.find(playerHtml)
-                        if (streamMatch != null) {
-                            val streamUrl = streamMatch.groupValues[1]
-                            val isHls = streamUrl.contains(".m3u8")
-                            list.add(
-                                VideoSource(
-                                    quality = if (idx == 0) "1080p FHD (Servidor Oficial JKanime $epInt)" else "720p HD (Servidor Rápido ${idx + 1})",
-                                    videoUrl = streamUrl,
-                                    format = if (isHls) "HLS" else "MP4",
-                                    headers = mapOf("Referer" to "https://jkanime.net/", "User-Agent" to "Mozilla/5.0")
-                                )
-                            )
+                    val slugRegex = Regex("""href=["']https://jkanime\.net/([a-zA-Z0-9-]+)/["']""")
+                    val matches = slugRegex.findAll(searchHtml).toList()
+                    for (m in matches) {
+                        val s = m.groupValues[1]
+                        if (s != "buscar" && s != "dash" && s != "img" && s != "directorio" && s != "horario") {
+                            foundSlugs.add(s)
                         }
-                    } catch (e: Exception) {
-                        // Siguiente servidor
                     }
+                    if (foundSlugs.isNotEmpty()) break
+                } catch (e: Exception) {
+                    // Siguiente candidato
+                }
+            }
+
+            // Si aún no encontró slugs, intentar con slug directo normalizado
+            if (foundSlugs.isEmpty() && romaji.isNotEmpty()) {
+                val directSlug = romaji.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                foundSlugs.add(directSlug)
+            }
+
+            // 2. Para cada slug encontrado, consultar el episodio específico y extraer reproductores
+            for (slug in foundSlugs.take(3)) {
+                try {
+                    val episodePageUrl = "https://jkanime.net/$slug/$epInt/"
+                    val epHtml = NetworkClient.get(episodePageUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+
+                    // Extraer reproductores embebidos de JKanime (/jkplayer/umv, /jkplayer/um, etc.)
+                    val playerUrlRegex = Regex("""https://jkanime\.net/jkplayer/[^"'><\s]+""")
+                    val playerMatches = playerUrlRegex.findAll(epHtml).map { it.value }.distinct().toList()
+
+                    for ((idx, playerUrl) in playerMatches.withIndex()) {
+                        try {
+                            val playerHtml = NetworkClient.get(playerUrl, mapOf(
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                                "Referer" to "https://jkanime.net/"
+                            ))
+                            val sourceRegex = Regex("""<source src=['"]([^'"]+)['"]""")
+                            val streamMatch = sourceRegex.find(playerHtml)
+                            if (streamMatch != null) {
+                                val streamUrl = streamMatch.groupValues[1]
+                                val isHls = streamUrl.contains(".m3u8")
+                                val serverLabel = if (playerUrl.contains("umv")) "Oficial FHD" else "Servidor HD ${idx + 1}"
+                                list.add(
+                                    VideoSource(
+                                        quality = "$serverLabel (Ep $epInt)",
+                                        videoUrl = streamUrl,
+                                        format = if (isHls) "HLS" else "MP4",
+                                        headers = mapOf("Referer" to "https://jkanime.net/", "User-Agent" to "Mozilla/5.0")
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            // Siguiente player
+                        }
+                    }
+                    if (list.isNotEmpty()) break
+                } catch (e: Exception) {
+                    // Siguiente slug
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // Si no se encontró en JKanime o falló la extracción, proveer servidores de respaldo directo
+        // Si todos los servidores fallaron, mostrar mensaje explicativo real en vez de videos de prueba
         if (list.isEmpty()) {
             list.add(
                 VideoSource(
-                    quality = "1080p FHD (Servidor Streaming Respaldo)",
-                    videoUrl = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-                    format = "HLS"
-                )
-            )
-            list.add(
-                VideoSource(
-                    quality = "720p HD (Servidor Alternativo MP4)",
-                    videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-                    format = "MP4"
+                    quality = "Servidores en sincronización (Reintentar en breve)",
+                    videoUrl = "",
+                    format = "NOTICE"
                 )
             )
         }

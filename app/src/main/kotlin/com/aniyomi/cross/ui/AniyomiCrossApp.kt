@@ -247,7 +247,12 @@ fun AniyomiCrossApp() {
             // Diálogo de Actualización Automática
             if (updateInfo != null) {
                 AlertDialog(
-                    onDismissRequest = { if (!isUpdating) updateInfo = null },
+                    onDismissRequest = {
+                        if (!isUpdating) {
+                            AppUpdateManager.dismissVersion(updateInfo?.latestVersion ?: "")
+                            updateInfo = null
+                        }
+                    },
                     title = {
                         Text("¡Nueva Versión Disponible (v${updateInfo?.latestVersion})!", color = Color.White, fontWeight = FontWeight.Bold)
                     },
@@ -267,6 +272,7 @@ fun AniyomiCrossApp() {
                             Button(
                                 onClick = {
                                     val downloadUrl = updateInfo?.apkDownloadUrl ?: "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk"
+                                    val newVer = updateInfo?.latestVersion ?: ""
                                     isUpdating = true
                                     coroutineScope.launch {
                                         val apkFile = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), "AniyomiCross-update.apk")
@@ -275,6 +281,7 @@ fun AniyomiCrossApp() {
                                         }
                                         isUpdating = false
                                         if (success && apkFile.exists()) {
+                                            AppUpdateManager.markVersionInstalled(newVer)
                                             updateInfo = null
                                             try {
                                                 val contentUri = FileProvider.getUriForFile(
@@ -300,7 +307,10 @@ fun AniyomiCrossApp() {
                     },
                     dismissButton = {
                         if (!isUpdating) {
-                            TextButton(onClick = { updateInfo = null }) {
+                            TextButton(onClick = {
+                                AppUpdateManager.dismissVersion(updateInfo?.latestVersion ?: "")
+                                updateInfo = null
+                            }) {
                                 Text("Más tarde", color = Color.Gray)
                             }
                         }
@@ -325,6 +335,7 @@ fun MediaCatalogView(
     var selectedCountry by remember { mutableStateOf("TODOS") }
     var selectedStatus by remember { mutableStateOf("TODOS") }
     var isRealtimeMode by remember { mutableStateOf(false) }
+    var isFiltersExpanded by remember { mutableStateOf(false) }
 
     var items by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -398,140 +409,166 @@ fun MediaCatalogView(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Barra de búsqueda con estilo redondeado
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = {
-                searchQuery = it
-                applyFilter(1)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Buscar por título...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = accentColor) },
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                focusedBorderColor = accentColor,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            ),
-            singleLine = true
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Modo de visualización para Manga (Populares o Tiempo Real)
-        if (isManga) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = !isRealtimeMode,
-                    onClick = { isRealtimeMode = false; applyFilter(1) },
-                    label = { Text("🔥 Populares") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-                FilterChip(
-                    selected = isRealtimeMode,
-                    onClick = { isRealtimeMode = true; applyFilter(1) },
-                    label = { Text("⚡ Tiempo Real (Recientes)") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-
-        // Filtro de País/Tipo (Solo para Manga/Manhwa)
-        if (isManga) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = selectedCountry == "TODOS",
-                    onClick = { selectedCountry = "TODOS"; applyFilter(1) },
-                    label = { Text("Todos") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-                FilterChip(
-                    selected = selectedCountry == "KR",
-                    onClick = { selectedCountry = "KR"; applyFilter(1) },
-                    label = { Text("🇰🇷 Manhwa") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-                FilterChip(
-                    selected = selectedCountry == "JP",
-                    onClick = { selectedCountry = "JP"; applyFilter(1) },
-                    label = { Text("🇯🇵 Manga") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-                FilterChip(
-                    selected = selectedCountry == "CN",
-                    onClick = { selectedCountry = "CN"; applyFilter(1) },
-                    label = { Text("🇨🇳 Manhua") },
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-
-        // Filtro de Estado (Completos / En Emisión)
+        // Barra de búsqueda con botón para desplegar/ocultar filtros
         Row(
             modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterChip(
-                selected = selectedStatus == "TODOS",
-                onClick = { selectedStatus = "TODOS"; applyFilter(1) },
-                label = { Text("Todos los Estados") },
-                shape = RoundedCornerShape(12.dp)
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = {
+                    searchQuery = it
+                    applyFilter(1)
+                },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Buscar por título...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = accentColor) },
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = accentColor,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                ),
+                singleLine = true
             )
-            FilterChip(
-                selected = selectedStatus == "completed",
-                onClick = { selectedStatus = "completed"; applyFilter(1) },
-                label = { Text("✅ Solo Finalizados / Completos") },
-                shape = RoundedCornerShape(12.dp)
-            )
-            FilterChip(
-                selected = selectedStatus == "ongoing",
-                onClick = { selectedStatus = "ongoing"; applyFilter(1) },
-                label = { Text("⏳ En Emisión") },
-                shape = RoundedCornerShape(12.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
 
-        // Filtro de Géneros
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(genres) { genre ->
-                FilterChip(
-                    selected = selectedGenre == genre,
-                    onClick = {
-                        selectedGenre = genre
-                        applyFilter(1)
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = accentColor,
-                        selectedLabelColor = Color.White
-                    ),
-                    label = {
-                        val labelEs = when (genre) {
-                            "Action" -> "Acción"
-                            "Adventure" -> "Aventura"
-                            "Comedy" -> "Comedia"
-                            "Fantasy" -> "Fantasía"
-                            "Supernatural" -> "Sobrenatural"
-                            "Sci-Fi" -> "Ciencia Ficción"
-                            else -> genre
-                        }
-                        Text(labelEs)
-                    }
+            // Botón interactivo para ocultar / mostrar menú de filtros
+            IconButton(
+                onClick = { isFiltersExpanded = !isFiltersExpanded },
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(
+                        if (isFiltersExpanded) accentColor else MaterialTheme.colorScheme.surface,
+                        RoundedCornerShape(16.dp)
+                    )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Filtros",
+                    tint = if (isFiltersExpanded) Color.White else accentColor
                 )
+            }
+        }
+
+        // Panel de Filtros Desplegable y Ocultable (No bloquea el catálogo)
+        AnimatedVisibility(
+            visible = isFiltersExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp),
+                tonalElevation = 4.dp
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    // 1. Selector Unificado de Estado (Finalizados vs En Emisión)
+                    Text("Estado de la Serie:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("TODOS" to "Todos", "completed" to "✅ Finalizados", "ongoing" to "⏳ En Emisión").forEach { (sKey, sLabel) ->
+                            FilterChip(
+                                selected = selectedStatus == sKey,
+                                onClick = { selectedStatus = sKey; applyFilter(1) },
+                                label = { Text(sLabel, fontSize = 11.sp) },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+
+                    // 2. Si es Manga: Tipo de Cómic y Modo
+                    if (isManga) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Tipo de Cómic:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("TODOS" to "Todos", "KR" to "🇰🇷 Manhwa", "JP" to "🇯🇵 Manga", "CN" to "🇨🇳 Manhua").forEach { (cKey, cLabel) ->
+                                FilterChip(
+                                    selected = selectedCountry == cKey,
+                                    onClick = { selectedCountry = cKey; applyFilter(1) },
+                                    label = { Text(cLabel, fontSize = 11.sp) },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = !isRealtimeMode,
+                                onClick = { isRealtimeMode = false; applyFilter(1) },
+                                label = { Text("🔥 Populares", fontSize = 11.sp) },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            FilterChip(
+                                selected = isRealtimeMode,
+                                onClick = { isRealtimeMode = true; applyFilter(1) },
+                                label = { Text("⚡ Tiempo Real", fontSize = 11.sp) },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+
+                    // 3. Filtro de Géneros
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Género:", style = MaterialTheme.typography.labelMedium, color = Color.LightGray)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(genres) { genre ->
+                            FilterChip(
+                                selected = selectedGenre == genre,
+                                onClick = {
+                                    selectedGenre = genre
+                                    applyFilter(1)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = accentColor,
+                                    selectedLabelColor = Color.White
+                                ),
+                                label = {
+                                    val labelEs = when (genre) {
+                                        "Action" -> "Acción"
+                                        "Adventure" -> "Aventura"
+                                        "Comedy" -> "Comedia"
+                                        "Fantasy" -> "Fantasía"
+                                        "Supernatural" -> "Sobrenatural"
+                                        "Sci-Fi" -> "Ciencia Ficción"
+                                        else -> genre
+                                    }
+                                    Text(labelEs, fontSize = 11.sp)
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { isFiltersExpanded = false }) {
+                            Text("Ocultar Filtros ▲", color = accentColor, fontSize = 12.sp)
+                        }
+                    }
+                }
             }
         }
 

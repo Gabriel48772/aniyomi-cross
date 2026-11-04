@@ -235,15 +235,33 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
     private fun setupAnimeTab() {
         animePanel.isOpaque = false
 
-        // Barra de Búsqueda y Filtros Premium
-        val filterBar = JPanel(FlowLayout(FlowLayout.LEFT, 14, 12))
-        filterBar.background = Theme.BG_SURFACE
-        filterBar.border = BorderFactory.createCompoundBorder(
+        val filterContainer = JPanel(BorderLayout())
+        filterContainer.background = Theme.BG_SURFACE
+        filterContainer.border = BorderFactory.createCompoundBorder(
             BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_COLOR),
-            EmptyBorder(4, 20, 4, 20)
+            EmptyBorder(8, 20, 8, 20)
         )
 
+        val topSearchRow = JPanel(FlowLayout(FlowLayout.LEFT, 12, 4))
+        topSearchRow.isOpaque = false
+
         val searchField = createStyledTextField("Buscar anime por título...")
+        val searchBtn = createActionButton("🔍 Buscar", Theme.ACCENT_PURPLE)
+        val toggleFiltersBtn = createActionButton("⚙ Filtros Avanzados ▼", Theme.BG_INPUT)
+
+        topSearchRow.add(JLabel("Anime:").apply {
+            foreground = Theme.TEXT_MUTED
+            font = Font("Segoe UI", Font.BOLD, 13)
+        })
+        topSearchRow.add(searchField)
+        topSearchRow.add(searchBtn)
+        topSearchRow.add(toggleFiltersBtn)
+
+        // Panel de filtros avanzados (Ocultable por defecto para no tapar el catálogo)
+        val advancedFiltersPanel = JPanel(FlowLayout(FlowLayout.LEFT, 14, 6))
+        advancedFiltersPanel.isOpaque = false
+        advancedFiltersPanel.isVisible = false
+
         val statusOptions = arrayOf(
             "Todos los Estados" to "TODOS",
             "✅ Solo Finalizados / Completos" to "completed",
@@ -253,7 +271,22 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         val genreCombo = createStyledComboBox(genresList.map { genreDisplayMap[it] ?: it }.toTypedArray())
         val sortCombo = createStyledComboBox(sortOptions.map { it.first }.toTypedArray())
 
-        val searchBtn = createActionButton("🔍 Filtrar", Theme.ACCENT_PURPLE)
+        toggleFiltersBtn.addActionListener {
+            advancedFiltersPanel.isVisible = !advancedFiltersPanel.isVisible
+            toggleFiltersBtn.text = if (advancedFiltersPanel.isVisible) "⚙ Ocultar Filtros ▲" else "⚙ Filtros Avanzados ▼"
+            filterContainer.revalidate()
+            filterContainer.repaint()
+        }
+
+        advancedFiltersPanel.add(JLabel("Estado:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(statusCombo)
+        advancedFiltersPanel.add(JLabel("Género:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(genreCombo)
+        advancedFiltersPanel.add(JLabel("Orden:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(sortCombo)
+
+        filterContainer.add(topSearchRow, BorderLayout.NORTH)
+        filterContainer.add(advancedFiltersPanel, BorderLayout.SOUTH)
 
         // Paginación
         val bottomPagination = JPanel(FlowLayout(FlowLayout.CENTER, 20, 14))
@@ -278,7 +311,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
             scope.launch {
                 animeGridPanel.removeAll()
-                animeGridPanel.add(createLoadingNotice("Cargando 50 animes en alta definición (Página $animePage)..."))
+                animeGridPanel.add(createLoadingNotice("Cargando animes (Página $animePage)..."))
                 animeGridPanel.revalidate()
                 animeGridPanel.repaint()
 
@@ -301,32 +334,6 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         prevBtn.addActionListener { if (animePage > 1) loadAnimePage(animePage - 1) }
         nextBtn.addActionListener { loadAnimePage(animePage + 1) }
 
-        val searchLbl = JLabel("Explorar:")
-        searchLbl.foreground = Theme.TEXT_MUTED
-        searchLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val statusLbl = JLabel("Estado:")
-        statusLbl.foreground = Theme.TEXT_MUTED
-        statusLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val genreLbl = JLabel("Género:")
-        genreLbl.foreground = Theme.TEXT_MUTED
-        genreLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val sortLbl = JLabel("Orden:")
-        sortLbl.foreground = Theme.TEXT_MUTED
-        sortLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        filterBar.add(searchLbl)
-        filterBar.add(searchField)
-        filterBar.add(statusLbl)
-        filterBar.add(statusCombo)
-        filterBar.add(genreLbl)
-        filterBar.add(genreCombo)
-        filterBar.add(sortLbl)
-        filterBar.add(sortCombo)
-        filterBar.add(searchBtn)
-
         bottomPagination.add(prevBtn)
         bottomPagination.add(pageLabel)
         bottomPagination.add(nextBtn)
@@ -339,7 +346,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         scroll.verticalScrollBar.unitIncrement = 25
         styleScrollBar(scroll)
 
-        animePanel.add(filterBar, BorderLayout.NORTH)
+        animePanel.add(filterContainer, BorderLayout.NORTH)
         animePanel.add(scroll, BorderLayout.CENTER)
         animePanel.add(bottomPagination, BorderLayout.SOUTH)
     }
@@ -347,23 +354,41 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
     private fun setupMangaTab() {
         mangaPanel.isOpaque = false
 
-        val filterBar = JPanel(FlowLayout(FlowLayout.LEFT, 14, 12))
-        filterBar.background = Theme.BG_SURFACE
-        filterBar.border = BorderFactory.createCompoundBorder(
+        val filterContainer = JPanel(BorderLayout())
+        filterContainer.background = Theme.BG_SURFACE
+        filterContainer.border = BorderFactory.createCompoundBorder(
             BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_COLOR),
-            EmptyBorder(4, 20, 4, 20)
+            EmptyBorder(8, 20, 8, 20)
         )
 
-        val searchField = createStyledTextField("Buscar manga o manhwa...")
+        val topSearchRow = JPanel(FlowLayout(FlowLayout.LEFT, 12, 4))
+        topSearchRow.isOpaque = false
+
+        val searchField = createStyledTextField("Buscar manga, manhwa o manhua...")
+        val searchBtn = createActionButton("🔍 Buscar", Theme.ACCENT_ROSE)
+        val toggleFiltersBtn = createActionButton("⚙ Filtros Avanzados ▼", Theme.BG_INPUT)
+
+        topSearchRow.add(JLabel("Cómics:").apply {
+            foreground = Theme.TEXT_MUTED
+            font = Font("Segoe UI", Font.BOLD, 13)
+        })
+        topSearchRow.add(searchField)
+        topSearchRow.add(searchBtn)
+        topSearchRow.add(toggleFiltersBtn)
+
+        // Panel de filtros avanzados (Ocultable por defecto para no tapar el catálogo)
+        val advancedFiltersPanel = JPanel(FlowLayout(FlowLayout.LEFT, 12, 6))
+        advancedFiltersPanel.isOpaque = false
+        advancedFiltersPanel.isVisible = false
 
         val modeOptions = arrayOf(
-            "🔥 Más Populares en Español",
+            "🔥 Más Populares",
             "⚡ Tiempo Real (Recién Actualizados)"
         )
         val modeCombo = createStyledComboBox(modeOptions)
 
         val typeOptions = arrayOf(
-            "Todos (Manga + Manhwa)" to "TODOS",
+            "Todos (Manga/Manhwa)" to "TODOS",
             "🇰🇷 Solo Manhwa (Corea)" to "KR",
             "🇯🇵 Solo Manga (Japón)" to "JP",
             "🇨🇳 Solo Manhua (China)" to "CN"
@@ -372,14 +397,34 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
 
         val statusOptions = arrayOf(
             "Todos los Estados" to "TODOS",
-            "✅ Finalizados / Completos" to "completed",
-            "⏳ En Emisión" to "ongoing"
+            "✅ Solo Finalizados / Completos" to "completed",
+            "⏳ Solo En Emisión" to "ongoing"
         )
         val statusCombo = createStyledComboBox(statusOptions.map { it.first }.toTypedArray())
 
         val genreCombo = createStyledComboBox(genresList.map { genreDisplayMap[it] ?: it }.toTypedArray())
         val sortCombo = createStyledComboBox(sortOptions.map { it.first }.toTypedArray())
-        val searchBtn = createActionButton("🔍 Filtrar", Theme.ACCENT_ROSE)
+
+        toggleFiltersBtn.addActionListener {
+            advancedFiltersPanel.isVisible = !advancedFiltersPanel.isVisible
+            toggleFiltersBtn.text = if (advancedFiltersPanel.isVisible) "⚙ Ocultar Filtros ▲" else "⚙ Filtros Avanzados ▼"
+            filterContainer.revalidate()
+            filterContainer.repaint()
+        }
+
+        advancedFiltersPanel.add(JLabel("Estado:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(statusCombo)
+        advancedFiltersPanel.add(JLabel("Tipo:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(typeCombo)
+        advancedFiltersPanel.add(JLabel("Modo:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(modeCombo)
+        advancedFiltersPanel.add(JLabel("Género:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(genreCombo)
+        advancedFiltersPanel.add(JLabel("Orden:").apply { foreground = Theme.TEXT_MUTED; font = Font("Segoe UI", Font.BOLD, 12) })
+        advancedFiltersPanel.add(sortCombo)
+
+        filterContainer.add(topSearchRow, BorderLayout.NORTH)
+        filterContainer.add(advancedFiltersPanel, BorderLayout.SOUTH)
 
         val bottomPagination = JPanel(FlowLayout(FlowLayout.CENTER, 20, 14))
         bottomPagination.background = Theme.BG_SURFACE
@@ -397,7 +442,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
             prevBtn.isEnabled = mangaPage > 1
 
             val isRealtime = modeCombo.selectedIndex == 1
-            val q = searchField.text.trim().let { if (it == "Buscar manga o manhwa...") "" else it }
+            val q = searchField.text.trim().let { if (it == "Buscar manga, manhwa o manhua...") "" else it }
             val selectedGenre = genresList[genreCombo.selectedIndex]
             val selectedSort = sortOptions[sortCombo.selectedIndex].second
             val selectedCountry = typeOptions[typeCombo.selectedIndex].second
@@ -435,44 +480,6 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         prevBtn.addActionListener { if (mangaPage > 1) loadMangaPage(mangaPage - 1) }
         nextBtn.addActionListener { loadMangaPage(mangaPage + 1) }
 
-        val modeLbl = JLabel("Modo:")
-        modeLbl.foreground = Theme.TEXT_MUTED
-        modeLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val searchLbl = JLabel("Explorar:")
-        searchLbl.foreground = Theme.TEXT_MUTED
-        searchLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val typeLbl = JLabel("Tipo:")
-        typeLbl.foreground = Theme.TEXT_MUTED
-        typeLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val statusLbl = JLabel("Estado:")
-        statusLbl.foreground = Theme.TEXT_MUTED
-        statusLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val genreLbl = JLabel("Género:")
-        genreLbl.foreground = Theme.TEXT_MUTED
-        genreLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        val sortLbl = JLabel("Orden:")
-        sortLbl.foreground = Theme.TEXT_MUTED
-        sortLbl.font = Font("Segoe UI", Font.BOLD, 12)
-
-        filterBar.add(modeLbl)
-        filterBar.add(modeCombo)
-        filterBar.add(searchLbl)
-        filterBar.add(searchField)
-        filterBar.add(typeLbl)
-        filterBar.add(typeCombo)
-        filterBar.add(statusLbl)
-        filterBar.add(statusCombo)
-        filterBar.add(genreLbl)
-        filterBar.add(genreCombo)
-        filterBar.add(sortLbl)
-        filterBar.add(sortCombo)
-        filterBar.add(searchBtn)
-
         bottomPagination.add(prevBtn)
         bottomPagination.add(pageLabel)
         bottomPagination.add(nextBtn)
@@ -485,7 +492,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         scroll.verticalScrollBar.unitIncrement = 25
         styleScrollBar(scroll)
 
-        mangaPanel.add(filterBar, BorderLayout.NORTH)
+        mangaPanel.add(filterContainer, BorderLayout.NORTH)
         mangaPanel.add(scroll, BorderLayout.CENTER)
         mangaPanel.add(bottomPagination, BorderLayout.SOUTH)
     }
@@ -668,7 +675,7 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         main.border = EmptyBorder(20, 24, 20, 24)
         main.isOpaque = false
 
-        val title = JLabel("<html><font color='#ffffff' size='5'><b>Nueva versión v${update.latestVersion} disponible</b></font><br><font color='#8b5cf6'>Tu versión actual: v${AppUpdateManager.CURRENT_VERSION}</font></html>")
+        val title = JLabel("<html><font color='#ffffff' size='5'><b>Nueva versión v${update.latestVersion} disponible</b></font><br><font color='#8b5cf6'>Tu versión actual: v${AppUpdateManager.getInstalledVersion()}</font></html>")
         val notes = JTextArea(update.releaseNotes)
         notes.isEditable = false
         notes.background = Theme.BG_INPUT
@@ -682,14 +689,21 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
         val cancelBtn = createActionButton("Más tarde", Theme.BG_INPUT)
         val updateBtn = createActionButton("⬇ Descargar e Instalar Ahora", Theme.ACCENT_PURPLE)
 
-        cancelBtn.addActionListener { dialog.dispose() }
+        cancelBtn.addActionListener {
+            AppUpdateManager.dismissVersion(update.latestVersion)
+            dialog.dispose()
+        }
         updateBtn.addActionListener {
             val url = update.jarDownloadUrl ?: "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar"
             updateBtn.isEnabled = false
             updateBtn.text = "Descargando..."
             scope.launch(Dispatchers.IO) {
-                val currentJar = File(AniyomiDesktopApp::class.java.protectionDomain.codeSource.location.toURI().path)
-                val updateJar = File(currentJar.parentFile, "AniyomiCross-PC-update.jar")
+                val currentJar = try {
+                    File(AniyomiDesktopApp::class.java.protectionDomain.codeSource.location.toURI().path)
+                } catch (e: Exception) {
+                    File("dist/AniyomiCross-PC.jar")
+                }
+                val updateJar = File(currentJar.parentFile ?: File("."), "AniyomiCross-PC-update.jar")
                 val success = AppUpdateManager.downloadUpdate(url, updateJar) { p ->
                     SwingUtilities.invokeLater {
                         updateBtn.text = "Descargando ${(p * 100).toInt()}%..."
@@ -697,8 +711,21 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                 }
                 withContext(Dispatchers.Swing) {
                     if (success && updateJar.exists()) {
-                        JOptionPane.showMessageDialog(dialog, "¡Actualización descargada!\nSe guardó en: ${updateJar.name}.\nReemplazando versión anterior...")
+                        AppUpdateManager.markVersionInstalled(update.latestVersion)
+                        JOptionPane.showMessageDialog(dialog, "¡Actualización a v${update.latestVersion} descargada con éxito!\nLa aplicación se reiniciará con las mejoras.")
                         dialog.dispose()
+
+                        // Crear script batch para reemplazar y reiniciar sin bloqueo de archivo en Windows
+                        val batFile = File(currentJar.parentFile ?: File("."), "apply_update.bat")
+                        batFile.writeText(
+                            "@echo off\r\n" +
+                            "timeout /t 1 /nobreak >nul\r\n" +
+                            "move /y \"${updateJar.absolutePath}\" \"${currentJar.absolutePath}\"\r\n" +
+                            "start \"\" javaw -jar \"${currentJar.absolutePath}\"\r\n" +
+                            "del \"%~f0\"\r\n"
+                        )
+                        Runtime.getRuntime().exec(arrayOf("cmd", "/c", "start", "/min", batFile.absolutePath))
+                        System.exit(0)
                     } else {
                         updateBtn.isEnabled = true
                         updateBtn.text = "Reintentar Descarga"

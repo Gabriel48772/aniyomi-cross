@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
-  "versionCode": 3,
+  "version": "1.2.1",
+  "versionCode": 4,
   "apkUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-Android.apk",
   "jarUrl": "https://github.com/Gabriel48772/aniyomi-cross/raw/main/dist/AniyomiCross-PC.jar",
-  "releaseNotes": "Versión 1.2.0: Scraping dinámico de videos reales por capítulo en Animes, filtro dedicado para cómics y animes finalizados/completos vs en emisión, y lista completa de capítulos sin duplicados ni faltantes."
+  "releaseNotes": "Versión 1.2.1: Menú de filtros plegable y selector unificado (evita bloqueos en catálogo), búsqueda multicriterio con nombres en romaji para reproducir los episodios reales exactos sin videos de prueba, y auto-actualizador inteligente con persistencia local."
 }
