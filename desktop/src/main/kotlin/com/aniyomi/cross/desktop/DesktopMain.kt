@@ -1075,10 +1075,14 @@ class AniyomiDesktopApp : JFrame("Aniyomi Cross • Cinema & Manga Edition") {
                         <span>$episodeName</span>
                     </div>
                     <div class="player-box">
+                    ${if (videoUrl.contains("/e/") || videoUrl.contains("/embed") || videoUrl.contains("videoembed") || videoUrl.contains("filemoon") || videoUrl.contains("dood") || videoUrl.contains("voe") || videoUrl.contains("streamwish") || videoUrl.contains("mp4upload")) """
+                        <iframe src="$videoUrl" style="width: 100%; height: 80vh; border: none; display: block;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+                    """ else """
                         <video id="video-element" controls autoplay playsinline crossorigin="anonymous">
                             <source src="$videoUrl" type="video/mp4">
                             Tu navegador no soporta video.
                         </video>
+                    """}
                     </div>
                     <div class="footer">
                         <span>Aniyomi Cross • Cinema Player</span>

@@ -207,11 +207,10 @@ class AniListAnimeSource : CrossSource {
             val romaji = romajiMatch?.groupValues?.get(1)?.trim() ?: ""
             val english = engMatch?.groupValues?.get(1)?.trim() ?: ""
 
-            // Lista de variantes de búsqueda ordenadas por probabilidad de coincidencia en JKanime
+            // Lista de variantes de búsqueda ordenadas por probabilidad de coincidencia
             val queryCandidates = mutableListOf<String>()
             if (romaji.isNotEmpty()) {
                 queryCandidates.add(romaji.replace(Regex("""\[.*?\]|\(.*?\)|Season \d+|Temporada \d+|Part \d+"""), "").trim())
-                // Primeras 2 o 3 palabras del título en romaji (ej: "Sousou no", "Ore dake", "Kimetsu no")
                 val words = romaji.split(" ").filter { it.length > 2 }
                 if (words.size >= 2) queryCandidates.add("${words[0]} ${words[1]}")
                 if (words.isNotEmpty()) queryCandidates.add(words[0])
@@ -226,11 +225,13 @@ class AniListAnimeSource : CrossSource {
                 queryCandidates.add(english)
             }
 
-            val foundSlugs = mutableSetOf<String>()
+            val distinctCandidates = queryCandidates.distinct().filter { it.isNotBlank() }
 
-            // 1. Buscar slug del anime en JKanime con las variantes
-            for (candidate in queryCandidates.distinct().take(4)) {
-                if (candidate.isBlank()) continue
+            // ==========================================
+            // MOTOR 1: JKanime (https://jkanime.net/)
+            // ==========================================
+            val jkSlugs = mutableSetOf<String>()
+            for (candidate in distinctCandidates.take(3)) {
                 try {
                     val encodedQ = URLEncoder.encode(candidate, "UTF-8")
                     val searchUrl = "https://jkanime.net/buscar?q=$encodedQ"
@@ -241,28 +242,21 @@ class AniListAnimeSource : CrossSource {
                     for (m in matches) {
                         val s = m.groupValues[1]
                         if (s != "buscar" && s != "dash" && s != "img" && s != "directorio" && s != "horario") {
-                            foundSlugs.add(s)
+                            jkSlugs.add(s)
                         }
                     }
-                    if (foundSlugs.isNotEmpty()) break
-                } catch (e: Exception) {
-                    // Siguiente candidato
-                }
+                    if (jkSlugs.isNotEmpty()) break
+                } catch (e: Exception) {}
             }
 
-            // Si aún no encontró slugs, intentar con slug directo normalizado
-            if (foundSlugs.isEmpty() && romaji.isNotEmpty()) {
-                val directSlug = romaji.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-                foundSlugs.add(directSlug)
+            if (jkSlugs.isEmpty() && romaji.isNotEmpty()) {
+                jkSlugs.add(romaji.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-'))
             }
 
-            // 2. Para cada slug encontrado, consultar el episodio específico y extraer reproductores
-            for (slug in foundSlugs.take(3)) {
+            for (slug in jkSlugs.take(2)) {
                 try {
                     val episodePageUrl = "https://jkanime.net/$slug/$epInt/"
                     val epHtml = NetworkClient.get(episodePageUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
-
-                    // Extraer reproductores embebidos de JKanime (/jkplayer/umv, /jkplayer/um, etc.)
                     val playerUrlRegex = Regex("""https://jkanime\.net/jkplayer/[^"'><\s]+""")
                     val playerMatches = playerUrlRegex.findAll(epHtml).map { it.value }.distinct().toList()
 
@@ -277,30 +271,115 @@ class AniListAnimeSource : CrossSource {
                             if (streamMatch != null) {
                                 val streamUrl = streamMatch.groupValues[1]
                                 val isHls = streamUrl.contains(".m3u8")
-                                val serverLabel = if (playerUrl.contains("umv")) "Oficial FHD" else "Servidor HD ${idx + 1}"
+                                val serverLabel = if (playerUrl.contains("umv")) "1080p FHD (JKanime Oficial)" else "720p HD (JKanime Servidor ${idx + 1})"
                                 list.add(
                                     VideoSource(
-                                        quality = "$serverLabel (Ep $epInt)",
+                                        quality = "$serverLabel - Ep $epInt",
                                         videoUrl = streamUrl,
                                         format = if (isHls) "HLS" else "MP4",
                                         headers = mapOf("Referer" to "https://jkanime.net/", "User-Agent" to "Mozilla/5.0")
                                     )
                                 )
                             }
-                        } catch (e: Exception) {
-                            // Siguiente player
-                        }
+                        } catch (e: Exception) {}
                     }
                     if (list.isNotEmpty()) break
-                } catch (e: Exception) {
-                    // Siguiente slug
+                } catch (e: Exception) {}
+            }
+
+            // ==========================================
+            // MOTOR 2: MonosChinos (https://monoschinos.st/)
+            // ==========================================
+            val mcSlugs = mutableSetOf<String>()
+            for (candidate in distinctCandidates.take(3)) {
+                try {
+                    val encodedQ = URLEncoder.encode(candidate, "UTF-8")
+                    val mcSearchUrl = "https://monoschinos.st/buscar?q=$encodedQ"
+                    val mcHtml = NetworkClient.get(mcSearchUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+                    val mcRegex = Regex("""href=["']https://monoschinos\.st/anime/([a-zA-Z0-9-]+)(?:-sub-espanol)?["']""")
+                    val matches = mcRegex.findAll(mcHtml).toList()
+                    for (m in matches) {
+                        val s = m.groupValues[1].removeSuffix("-sub-espanol")
+                        mcSlugs.add(s)
+                    }
+                    if (mcSlugs.isNotEmpty()) break
+                } catch (e: Exception) {}
+            }
+
+            for (mcSlug in mcSlugs.take(2)) {
+                try {
+                    val mcEpUrl = "https://monoschinos.st/ver/$mcSlug-episodio-$epInt"
+                    val mcEpHtml = NetworkClient.get(mcEpUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+                    val dataPlayerRegex = Regex("""data-player=["']([A-Za-z0-9+/=]+)["']""")
+                    val playerMatches = dataPlayerRegex.findAll(mcEpHtml).toList()
+
+                    for (pm in playerMatches) {
+                        val b64 = pm.groupValues[1]
+                        try {
+                            val decodedUrl = String(java.util.Base64.getDecoder().decode(b64)).trim()
+                            if (decodedUrl.startsWith("http")) {
+                                val serverName = when {
+                                    decodedUrl.contains("filemoon") -> "Filemoon"
+                                    decodedUrl.contains("dood") -> "DoodStream"
+                                    decodedUrl.contains("voe") -> "Voe"
+                                    decodedUrl.contains("mp4upload") -> "Mp4Upload"
+                                    decodedUrl.contains("swhoi") || decodedUrl.contains("streamwish") || decodedUrl.contains("wishfast") -> "StreamWish"
+                                    decodedUrl.contains("uqload") -> "Uqload"
+                                    decodedUrl.contains("ok.ru") -> "OkRu"
+                                    else -> "Streaming"
+                                }
+                                list.add(
+                                    VideoSource(
+                                        quality = "HD (MonosChinos - $serverName - Ep $epInt)",
+                                        videoUrl = decodedUrl,
+                                        format = if (decodedUrl.contains(".m3u8")) "HLS" else "EMBED"
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {}
+                    }
+                    if (list.isNotEmpty()) break
+                } catch (e: Exception) {}
+            }
+
+            // ==========================================
+            // MOTOR 3: AnimeFLV (https://animeflv.or.at/)
+            // ==========================================
+            if (list.size < 2) {
+                for (candidate in distinctCandidates.take(2)) {
+                    try {
+                        val encodedQ = URLEncoder.encode(candidate, "UTF-8")
+                        val aflvSearchUrl = "https://animeflv.or.at/?s=$encodedQ"
+                        val aflvHtml = NetworkClient.get(aflvSearchUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+                        val epLinkRegex = Regex("""href=["'](https://animeflv\.or\.at/\d{4}/\d{2}/\d{2}/[a-zA-Z0-9-]+-episodio-$epInt/?)["']""")
+                        val epMatch = epLinkRegex.find(aflvHtml)
+                        if (epMatch != null) {
+                            val aflvEpUrl = epMatch.groupValues[1]
+                            val aflvEpHtml = NetworkClient.get(aflvEpUrl, mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+                            val iframeRegex = Regex("""<iframe[^>]+src=["']([^"']+)["']""")
+                            val iframes = iframeRegex.findAll(aflvEpHtml).toList()
+                            for (ifr in iframes) {
+                                val iUrl = ifr.groupValues[1]
+                                if (iUrl.startsWith("http")) {
+                                    list.add(
+                                        VideoSource(
+                                            quality = "HD (AnimeFLV Oficial - Ep $epInt)",
+                                            videoUrl = iUrl,
+                                            format = if (iUrl.contains(".m3u8")) "HLS" else "EMBED"
+                                        )
+                                    )
+                                }
+                            }
+                            if (list.isNotEmpty()) break
+                        }
+                    } catch (e: Exception) {}
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // Si todos los servidores fallaron, mostrar mensaje explicativo real en vez de videos de prueba
+        // Si todos los servidores fallaron, mostrar mensaje explicativo real
         if (list.isEmpty()) {
             list.add(
                 VideoSource(
@@ -598,47 +677,15 @@ class MangaDexDirectSource : CrossSource {
             e.printStackTrace()
         }
 
-        // Si faltan capítulos en español o no tiene traducciones en es/es-la, rellenar con capítulos en inglés
-        if (uniqueChapters.size < 5) {
-            try {
-                val enFeedUrl = "$baseUrl/manga/$mangaId/feed?limit=500&order[chapter]=desc&translatedLanguage[]=en"
-                val enRes = NetworkClient.get(enFeedUrl)
-                val enData = JSONObject(enRes).optJSONArray("data") ?: JSONArray()
-                for (k in 0 until enData.length()) {
-                    val chObj = enData.getJSONObject(k)
-                    val chId = chObj.getString("id")
-                    val attr = chObj.getJSONObject("attributes")
-                    val chNum = attr.optString("chapter", "")
-                    val chTitle = attr.optString("title", "")
-                    val key = if (chNum.isNotEmpty()) chNum else chId
-                    if (!uniqueChapters.containsKey(key)) {
-                        val displayNum = if (chNum.isNotEmpty()) chNum else "${uniqueChapters.size + 1}"
-                        val displayTitle = if (chTitle.isNotEmpty() && chTitle != "null") "Capítulo $displayNum: $chTitle [EN]" else "Capítulo $displayNum [EN]"
-                        uniqueChapters[key] = EpisodeOrChapter(
-                            id = chId,
-                            name = displayTitle,
-                            number = chNum.toFloatOrNull() ?: (uniqueChapters.size + 1).toFloat(),
-                            url = chId,
-                            uploadDate = attr.optString("publishAt", "")
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // Si la serie sigue vacía, generar lista de muestra numerada
+        // Si la serie no tiene capítulos disponibles en español, mostrar aviso claro
         if (uniqueChapters.isEmpty()) {
-            for (i in 30 downTo 1) {
-                uniqueChapters["$i"] = EpisodeOrChapter(
-                    id = "fallback_${media.id}_$i",
-                    name = "Capítulo $i - Edición Oficial",
-                    number = i.toFloat(),
-                    url = "https://mangadex.org/title/${media.id}",
-                    uploadDate = "Reciente"
-                )
-            }
+            uniqueChapters["0"] = EpisodeOrChapter(
+                id = "no_es_${media.id}",
+                name = "Aviso: Esta serie aún no cuenta con traducción en Español",
+                number = 0f,
+                url = "https://mangadex.org/title/${media.id}",
+                uploadDate = "Aviso"
+            )
         }
 
         // Ordenar capítulos de forma descendente (último capítulo arriba)
